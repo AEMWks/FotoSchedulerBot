@@ -112,6 +112,29 @@ def get_current_time_window(plan):
             return i, entry
     return None, None
 
+# Función auxiliar para mostrar el estado actualizado
+async def show_updated_status(context, plan):
+    """Muestra el estado actualizado después de recibir contenido"""
+    delivered_count = sum(1 for entry in plan if entry.get("delivered", False))
+    total_count = len(plan)
+    
+    # Encontrar próxima notificación pendiente
+    now = datetime.now()
+    current_hour = now.hour
+    next_notification = None
+    
+    for entry in plan:
+        notification_hour = 8 + entry["hour"]
+        if notification_hour > current_hour and not entry.get("delivered", False):
+            next_notification = f"{notification_hour:02d}:00"
+            break
+    
+    status_msg = f"📈 Progreso: {delivered_count}/{total_count} completadas"
+    if next_notification:
+        status_msg += f"\n🔔 Próxima: {next_notification}"
+    
+    await context.bot.send_message(chat_id=USER_ID, text=status_msg)
+
 # Guardar foto que el usuario envía
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("photo_handler triggered", flush=True)
@@ -193,6 +216,8 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update_delivery_state(window_index, True)
             await context.bot.send_message(chat_id=USER_ID, text="✅ Foto recibida y guardada.")
             print(f"Foto guardada como {file_path}", flush=True)
+            # Mostrar estado actualizado
+            await show_updated_status(context, plan)
             return
 
         # Si es video normal
@@ -205,6 +230,8 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update_delivery_state(window_index, True)
             await context.bot.send_message(chat_id=USER_ID, text="✅ Video recibido y guardado.")
             print(f"Video guardado como {file_path}", flush=True)
+            # Mostrar estado actualizado
+            await show_updated_status(context, plan)
             return
 
         # Si es documento (archivo)
@@ -220,6 +247,8 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 update_delivery_state(window_index, True)
                 await context.bot.send_message(chat_id=USER_ID, text="✅ Archivo recibido y guardado.")
                 print(f"Archivo guardado como {file_path}", flush=True)
+                # Mostrar estado actualizado
+                await show_updated_status(context, plan)
                 return
             else:
                 await context.bot.send_message(chat_id=USER_ID, text="❌ Solo se aceptan imágenes (jpg, png, heic/heif) o videos (mp4, mov, hevc).")
@@ -232,13 +261,70 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"Error guardando foto: {e}", flush=True)
         await context.bot.send_message(chat_id=USER_ID, text="❌ Error al guardar la foto.")
 
+# Comando para mostrar el estado de las notificaciones
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != USER_ID:
+        await context.bot.send_message(chat_id=update.effective_user.id, text="❌ No tienes permisos para usar este bot.")
+        return
+
+    plan = load_plan_json()
+    if not plan:
+        await context.bot.send_message(chat_id=USER_ID, text="❌ No hay planificación activa para hoy.")
+        return
+
+    now = datetime.now()
+    current_hour = now.hour
+    status_text = "📊 **Estado de notificaciones de hoy:**\n\n"
+    
+    for i, entry in enumerate(plan):
+        notification_hour = 8 + entry["hour"]
+        time_str = f"{notification_hour:02d}:00"
+        type_emoji = "📸" if entry["type"] == "foto" else "🎥"
+        
+        # Determinar el estado
+        if entry.get("delivered", False):
+            status_emoji = "✅"
+            status_text += f"{status_emoji} {time_str} - {type_emoji} {entry['type'].upper()} - **ENTREGADO**\n"
+        elif notification_hour <= current_hour:
+            if notification_hour + 2 > current_hour:
+                status_emoji = "🔔"
+                status_text += f"{status_emoji} {time_str} - {type_emoji} {entry['type'].upper()} - **PENDIENTE** (ventana activa)\n"
+            else:
+                status_emoji = "⏰"
+                status_text += f"{status_emoji} {time_str} - {type_emoji} {entry['type'].upper()} - **PERDIDO** (ventana cerrada)\n"
+        else:
+            status_emoji = "⏳"
+            status_text += f"{status_emoji} {time_str} - {type_emoji} {entry['type'].upper()} - **PROGRAMADO**\n"
+    
+    # Agregar resumen
+    delivered_count = sum(1 for entry in plan if entry.get("delivered", False))
+    total_count = len(plan)
+    
+    status_text += f"\n📈 **Resumen:** {delivered_count}/{total_count} completadas"
+    
+    # Mostrar próxima notificación si existe
+    next_notification = None
+    for entry in plan:
+        notification_hour = 8 + entry["hour"]
+        if notification_hour > current_hour and not entry.get("delivered", False):
+            next_notification = f"{notification_hour:02d}:00"
+            break
+    
+    if next_notification:
+        status_text += f"\n🔔 **Próxima:** {next_notification}"
+    
+    await context.bot.send_message(chat_id=USER_ID, text=status_text, parse_mode='Markdown')
+
 # Comando para forzar programación del día
 async def start_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != USER_ID:
+        await context.bot.send_message(chat_id=update.effective_user.id, text="❌ No tienes permisos para usar este bot.")
         return
 
     await context.bot.send_message(chat_id=USER_ID, text="📅 Generando horas para hoy...")
     await schedule_today(context.application)
+    # Mostrar estado después de generar
+    await status_command(update, context)
 
 # Función para programar una notificación
 async def schedule_notification(app, hour_offset):
@@ -281,8 +367,11 @@ async def main():
         # Crear la aplicación
         app = ApplicationBuilder().token(TOKEN).build()
         
-        # Agregar handlers para todos los tipos de mensaje
+        # Agregar handlers para comandos
         app.add_handler(CommandHandler("start", start_day))
+        app.add_handler(CommandHandler("status", status_command))
+        
+        # Handler para mensajes (debe ir después de los comandos)
         app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.TEXT, photo_handler))
 
         # Crear y configurar el scheduler
