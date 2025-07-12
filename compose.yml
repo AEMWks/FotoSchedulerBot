@@ -1,0 +1,12 @@
+services:
+  nas-photo-bot:
+    build: .
+    container_name: ${CONTAINER_NAME:-nas-photo-bot}
+    env_file:
+      - .env  # Este archivo sobreescribe las variables de .env
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_USER_ID: ${TELEGRAM_USER_ID}
+    volumes:
+      - ${HOST_DATA_PATH}:${DATA_PATH:-/data/fotos}
+    restart: unless-stopped
