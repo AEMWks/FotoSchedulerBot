@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
 # Habilitar módulos necesarios para Apache
 RUN a2enmod rewrite
 RUN a2enmod headers
+RUN a2enmod expires
 
 # Configurar Apache para ejecutarse como www-data
 RUN sed -i 's/User .*/User www-data/' /etc/apache2/apache2.conf
