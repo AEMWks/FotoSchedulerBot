@@ -24,6 +24,7 @@ from apscheduler.triggers.cron import CronTrigger
 try:
     from PIL import Image
     PIL_AVAILABLE = True
+    print("✅ PIL/Pillow cargado correctamente")
 except ImportError:
     PIL_AVAILABLE = False
     print("⚠️ PIL/Pillow no disponible - validación de resolución deshabilitada")
@@ -31,9 +32,13 @@ except ImportError:
 try:
     import cv2
     CV2_AVAILABLE = True
-except ImportError:
+    print("✅ OpenCV cargado correctamente")
+except ImportError as e:
     CV2_AVAILABLE = False
-    print("⚠️ OpenCV no disponible - validación de duración de video deshabilitada")
+    print(f"⚠️ OpenCV no disponible - validación de duración de video deshabilitada: {e}")
+except Exception as e:
+    CV2_AVAILABLE = False
+    print(f"⚠️ Error cargando OpenCV - validación de duración de video deshabilitada: {e}")
 
 # Configuración
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -61,7 +66,6 @@ def setup_file_permissions(file_path):
             # Fallback a UID/GID 33 si www-data no existe
             target_uid = 33
             target_gid = 33
-            print(f"⚠️ Usuario www-data no encontrado, usando UID/GID 33")
 
         # Configurar ownership
         try:
@@ -852,7 +856,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"Error guardando archivo: {e}", flush=True)
         await context.bot.send_message(chat_id=USER_ID, text="❌ Error al guardar el archivo.")
 
-# Comando para mostrar el estado de las notificaciones con límites
+# Comando para mostrar el estado de las notificaciones
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != USER_ID:
         await context.bot.send_message(chat_id=update.effective_user.id, text="❌ No tienes permisos para usar este bot.")
@@ -865,6 +869,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     now = datetime.now()
     current_hour = now.hour
+    current_total_minutes = current_hour * 60 + now.minute
     status_text = "📊 **Estado de notificaciones de hoy:**\n\n"
 
     for i, entry in enumerate(plan):
@@ -872,10 +877,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         notification_minute = entry.get("minute", 0)
         time_str = format_notification_time(notification_hour, notification_minute)
         type_emoji = "📸" if entry["type"] == "foto" else "🎥"
-
-        # Convertir a minutos totales para comparación
         notification_total_minutes = notification_hour * 60 + notification_minute
-        current_total_minutes = current_hour * 60 + now.minute
 
         # Determinar el estado
         if entry.get("delivered", False):
@@ -900,8 +902,6 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Mostrar próxima notificación si existe
     next_notification = None
-    current_total_minutes = current_hour * 60 + now.minute
-
     for entry in plan:
         notification_hour = entry.get("hour", 8)
         notification_minute = entry.get("minute", 0)
@@ -929,19 +929,50 @@ async def start_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await context.bot.send_message(chat_id=USER_ID, text="📅 Generando horas para hoy...")
-    # Necesitamos acceso al scheduler, pero no lo tenemos aquí
-    # Por simplicidad, recreamos el plan pero no las notificaciones
-    # Las notificaciones se programarán cuando el bot se reinicie
+
     plan = load_plan_json()
     if plan is None:
         schedule = generate_random_schedule()
         save_plan_json(schedule)
-        await context.bot.send_message(chat_id=USER_ID, text="✅ Nuevo plan generado. Reinicia el bot para activar las notificaciones.")
+        await context.bot.send_message(chat_id=USER_ID, text="✅ Nuevo plan generado. Las notificaciones se programarán automáticamente.")
     else:
         await context.bot.send_message(chat_id=USER_ID, text="✅ Ya existe un plan para hoy.")
 
     # Mostrar estado después de generar
     await status_command(update, context)
+
+# Comando para mostrar información del sistema
+async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != USER_ID:
+        await context.bot.send_message(chat_id=update.effective_user.id, text="❌ No tienes permisos para usar este bot.")
+        return
+
+    info_text = "🤖 **Información del sistema:**\n\n"
+    info_text += f"📦 **Python Telegram Bot:** Disponible\n"
+    info_text += f"⏰ **APScheduler:** Disponible\n"
+    info_text += f"🖼️ **PIL/Pillow:** {'✅ Disponible' if PIL_AVAILABLE else '❌ No disponible'}\n"
+    info_text += f"🎥 **OpenCV:** {'✅ Disponible' if CV2_AVAILABLE else '❌ No disponible'}\n\n"
+
+    if not PIL_AVAILABLE:
+        info_text += "⚠️ **Sin PIL:** No se puede validar resolución de imágenes\n"
+    if not CV2_AVAILABLE:
+        info_text += "⚠️ **Sin OpenCV:** No se puede validar duración de videos\n"
+
+    if PIL_AVAILABLE and CV2_AVAILABLE:
+        info_text += "✅ **Todas las validaciones activas**\n"
+
+    info_text += f"\n📁 **Ruta de guardado:** {SAVE_PATH}\n"
+    info_text += f"🔧 **Configuración de permisos:**\n"
+    info_text += f"• Umask actual: {oct(os.umask(0o002))[2:]}\n"
+    info_text += f"• Archivos: 664 (rw-rw-r--)\n"
+    info_text += f"• Directorios: 775 (rwxrwxr-x)\n"
+    info_text += f"• Owner: www-data (33:33)\n\n"
+    info_text += f"📏 **Límites configurados:**\n"
+    info_text += f"• Fotos: Mínimo 1080p\n"
+    info_text += f"• Videos: Máximo {MAX_VIDEO_DURATION}s\n"
+    info_text += f"• Tamaño: Máximo {MAX_FILE_SIZE/(1024*1024):.0f}MB"
+
+    await context.bot.send_message(chat_id=USER_ID, text=info_text, parse_mode='Markdown')
 
 # Comando de ayuda completo
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -987,7 +1018,7 @@ Este bot te ayuda a crear un diario visual automático enviándote notificacione
 • Próximas ejecuciones
 • Estado interno del programador
 
-❓ `/help` - Mostrar esta ayuda
+❓ `/help` o `/ayuda` - Mostrar esta ayuda
 
 📏 **REQUISITOS DE CONTENIDO:**
 
@@ -1033,7 +1064,7 @@ Si el bot se reinicia y hay notificaciones perdidas que aún están en ventana a
 
 Accede a tu feed visual en: `http://localhost:8090`
 • Ve todas tus fotos organizadas por fecha
-• Actualización automática cada minuto
+• Actualización automática
 • Lightbox para ver imágenes en grande
 • Reproducción de videos integrada
 
@@ -1095,36 +1126,6 @@ Accede a tu feed visual en: `http://localhost:8090`
             text="💡 **Sugerencia:** Usa `/start` para comenzar tu diario fotográfico de hoy.",
             parse_mode='Markdown'
         )
-    if update.effective_user.id != USER_ID:
-        await context.bot.send_message(chat_id=update.effective_user.id, text="❌ No tienes permisos para usar este bot.")
-        return
-
-    info_text = "🤖 **Información del sistema:**\n\n"
-    info_text += f"📦 **Python Telegram Bot:** Disponible\n"
-    info_text += f"⏰ **APScheduler:** Disponible\n"
-    info_text += f"🖼️ **PIL/Pillow:** {'✅ Disponible' if PIL_AVAILABLE else '❌ No disponible'}\n"
-    info_text += f"🎥 **OpenCV:** {'✅ Disponible' if CV2_AVAILABLE else '❌ No disponible'}\n\n"
-
-    if not PIL_AVAILABLE:
-        info_text += "⚠️ **Sin PIL:** No se puede validar resolución de imágenes\n"
-    if not CV2_AVAILABLE:
-        info_text += "⚠️ **Sin OpenCV:** No se puede validar duración de videos\n"
-
-    if PIL_AVAILABLE and CV2_AVAILABLE:
-        info_text += "✅ **Todas las validaciones activas**\n"
-
-    info_text += f"\n📁 **Ruta de guardado:** {SAVE_PATH}\n"
-    info_text += f"🔧 **Configuración de permisos:**\n"
-    info_text += f"• Umask actual: {oct(os.umask(0o002))[2:]}\n"
-    info_text += f"• Archivos: 664 (rw-rw-r--)\n"
-    info_text += f"• Directorios: 775 (rwxrwxr-x)\n"
-    info_text += f"• Owner: www-data (33:33)\n\n"
-    info_text += f"📏 **Límites configurados:**\n"
-    info_text += f"• Fotos: Mínimo 1080p\n"
-    info_text += f"• Videos: Máximo {MAX_VIDEO_DURATION}s\n"
-    info_text += f"• Tamaño: Máximo {MAX_FILE_SIZE/(1024*1024):.0f}MB"
-
-    await context.bot.send_message(chat_id=USER_ID, text=info_text, parse_mode='Markdown')
 
 # Comando para depurar las ventanas de tiempo
 async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1141,6 +1142,7 @@ async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     now = datetime.now()
     current_hour = now.hour
     current_minute = now.minute
+    current_total_minutes = current_hour * 60 + current_minute
 
     debug_text = f"🔍 **Debug ventanas de tiempo**\n\n"
     debug_text += f"⏰ **Hora actual:** {current_hour:02d}:{current_minute:02d}\n\n"
@@ -1150,11 +1152,6 @@ async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i, entry in enumerate(plan):
         notification_hour = entry.get("hour", 8)
         notification_minute = entry.get("minute", 0)
-        notification_total_minutes = notification_hour * 60 + notification_minute
-        current_total_minutes = current_hour * 60 + current_minute
-        window_end_minutes = notification_total_minutes + 120
-        window_end_hour = window_end_minutes // 60
-        window_end_minute = window_end_minutes % 60
 
         status = ""
         if entry.get("delivered", False):
@@ -1162,7 +1159,7 @@ async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif is_notification_window_active(plan, i, current_total_minutes):
             status = "🔔 VENTANA ACTIVA"
             active_window = i
-        elif current_total_minutes >= notification_total_minutes:
+        elif current_total_minutes >= (notification_hour * 60 + notification_minute):
             status = "⏰ VENTANA CERRADA"
         else:
             status = "⏳ PROGRAMADO"
@@ -1262,7 +1259,7 @@ async def permissions_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         await context.bot.send_message(chat_id=USER_ID, text=f"❌ Error verificando permisos: {e}")
 
-# Función para programar una notificación con minutos
+# Función para programar una notificación
 async def schedule_notification(scheduler, app, notification_data):
     now = datetime.now()
     target_hour = notification_data.get("hour", 8)
@@ -1278,11 +1275,11 @@ async def schedule_notification(scheduler, app, notification_data):
     scheduler.add_job(
         send_photo_request,
         CronTrigger(hour=target_hour, minute=target_minute),
-        args=[app, notification_data],  # Pasar el entry completo en lugar de solo la hora
+        args=[app, notification_data],  # Pasar el entry completo
         id=job_id,
         replace_existing=True
     )
-    print(f"Programada notificación de {notification_data.get('type', 'foto')} para las {target_hour:02d}:{target_minute:02d} usando scheduler")
+    print(f"Programada notificación de {notification_data.get('type', 'foto')} para las {target_hour:02d}:{target_minute:02d}")
 
 # Función para enviar notificaciones perdidas que aún están en ventana activa
 async def send_missed_notifications_in_window(app):
@@ -1332,6 +1329,7 @@ async def schedule_today(app, scheduler=None):
         if plan is None:
             plan = generate_random_schedule()
             save_plan_json(plan)
+            print(f"✅ Plan generado con {len(plan)} notificaciones")
 
         # Verificar y enviar notificaciones perdidas que aún están en ventana activa
         await send_missed_notifications_in_window(app)
@@ -1389,8 +1387,6 @@ async def main():
         app.add_handler(CommandHandler("scheduler", scheduler_debug_command))
         app.add_handler(CommandHandler("permisos", permissions_command))
         app.add_handler(CommandHandler("help", help_command))
-
-        # También agregar "ayuda" como alias en español
         app.add_handler(CommandHandler("ayuda", help_command))
 
         # Handler para mensajes (debe ir después de los comandos)

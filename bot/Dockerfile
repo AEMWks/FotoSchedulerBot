@@ -14,12 +14,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Dependencias para PIL/Pillow
     libjpeg62-turbo-dev \
     libpng-dev \
-    # Dependencias mínimas para OpenCV (solo las disponibles)
+    # Dependencias mínimas para OpenCV
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender1 \
     libgomp1 \
+    libgthread-2.0-0 \
+    libavformat58 \
+    libavcodec58 \
+    libswscale5 \
+    libgtk-3-0 \
     # Limpiar cache
  && rm -rf /var/lib/apt/lists/* \
  && apt-get clean
@@ -30,15 +35,19 @@ WORKDIR /app
 # Copiar requirements.txt primero para aprovechar el cache de Docker
 COPY requirements.txt .
 
-# Instalar dependencias de Python
+# Instalar dependencias de Python con manejo de errores
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt || { \
+        echo "Error instalando algunas dependencias, continuando..."; \
+        pip install --no-cache-dir python-telegram-bot==20.8 APScheduler==3.10.4 Pillow==10.1.0; \
+    }
 
 # Copiar el script
 COPY bot.py .
 
 # Variables de entorno
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 
 # Crear carpeta para guardar fotos (ruta interna del contenedor)
 RUN mkdir -p /data/fotos
@@ -47,59 +56,39 @@ RUN mkdir -p /data/fotos
 ENV TELEGRAM_BOT_TOKEN=""
 ENV TELEGRAM_USER_ID=""
 
-# Crear script de entrada para configurar permisos y umask
+# Crear script de entrada mejorado
 RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
 echo "🚀 Iniciando bot de fotos..."\n\
 \n\
 # Configurar umask para que los archivos se creen con permisos correctos\n\
-# umask 002 = archivos 664, directorios 775\n\
 umask 002\n\
 \n\
 # Crear directorio base si no existe\n\
 mkdir -p /data/fotos\n\
 \n\
-# Función para configurar permisos recursivamente\n\
+# Función para configurar permisos\n\
 setup_permissions() {\n\
     local dir="$1"\n\
     if [ -d "$dir" ]; then\n\
         echo "📁 Configurando permisos para: $dir"\n\
         \n\
-        # Intentar obtener UID/GID de www-data, con fallback a 33:33\n\
         local wwwdata_uid=33\n\
         local wwwdata_gid=33\n\
         \n\
-        if command -v id >/dev/null 2>&1; then\n\
-            if id www-data >/dev/null 2>&1; then\n\
-                wwwdata_uid=$(id -u www-data)\n\
-                wwwdata_gid=$(id -g www-data)\n\
-            fi\n\
-        fi\n\
-        \n\
-        echo "👤 Configurando ownership a $wwwdata_uid:$wwwdata_gid (www-data)"\n\
-        \n\
-        # Configurar ownership y permisos\n\
         chown -R $wwwdata_uid:$wwwdata_gid "$dir" 2>/dev/null || {\n\
             echo "⚠️  No se pudo cambiar ownership, continuando..."\n\
         }\n\
         \n\
-        # Configurar permisos: directorios 775, archivos 664\n\
-        find "$dir" -type d -exec chmod 775 {} \\; 2>/dev/null || {\n\
-            echo "⚠️  No se pudieron configurar permisos de directorios"\n\
-        }\n\
-        \n\
-        find "$dir" -type f -exec chmod 664 {} \\; 2>/dev/null || {\n\
-            echo "⚠️  No se pudieron configurar permisos de archivos"\n\
-        }\n\
+        find "$dir" -type d -exec chmod 775 {} \\; 2>/dev/null || true\n\
+        find "$dir" -type f -exec chmod 664 {} \\; 2>/dev/null || true\n\
         \n\
         echo "✅ Permisos configurados para $dir"\n\
-    else\n\
-        echo "⚠️  Directorio $dir no encontrado, se creará cuando sea necesario"\n\
     fi\n\
 }\n\
 \n\
-# Configurar permisos del directorio de fotos montado\n\
+# Configurar permisos del directorio de fotos\n\
 setup_permissions "/data/fotos"\n\
 \n\
 # Mostrar información del sistema\n\
@@ -109,48 +98,38 @@ echo "   Umask actual: $(umask)"\n\
 echo "   Directorio fotos: /data/fotos"\n\
 echo "   Zona horaria: $TZ"\n\
 \n\
-# Verificar que el directorio de fotos es escribible\n\
+# Verificar dependencias de Python\n\
+echo "📦 Verificando dependencias..."\n\
+python3 -c "import telegram; print(\"✅ python-telegram-bot ok\")" 2>/dev/null || echo "❌ python-telegram-bot error"\n\
+python3 -c "from apscheduler.schedulers.asyncio import AsyncIOScheduler; print(\"✅ APScheduler ok\")" 2>/dev/null || echo "❌ APScheduler error"\n\
+python3 -c "from PIL import Image; print(\"✅ Pillow ok\")" 2>/dev/null || echo "⚠️ Pillow no disponible"\n\
+python3 -c "import cv2; print(\"✅ OpenCV ok\")" 2>/dev/null || echo "⚠️ OpenCV no disponible"\n\
+\n\
+# Verificar directorio escribible\n\
 if [ -w "/data/fotos" ]; then\n\
-    echo "✅ Directorio /data/fotos es escribible"\n\
+    echo "✅ Directorio /data/fotos escribible"\n\
+    touch "/data/fotos/.test" 2>/dev/null && rm "/data/fotos/.test" && echo "✅ Test escritura ok" || echo "⚠️ Test escritura falló"\n\
 else\n\
-    echo "❌ Directorio /data/fotos NO es escribible"\n\
-    echo "   Intentando crear archivo de prueba..."\n\
-    touch "/data/fotos/.test" 2>/dev/null && {\n\
-        echo "✅ Archivo de prueba creado exitosamente"\n\
-        rm "/data/fotos/.test"\n\
-    } || {\n\
-        echo "❌ No se puede escribir en /data/fotos"\n\
-        echo "   Verifica los permisos del volumen montado"\n\
-    }\n\
+    echo "❌ Directorio /data/fotos NO escribible"\n\
 fi\n\
 \n\
-# Iniciar script de monitoreo de permisos en background\n\
-echo "🔄 Iniciando monitoreo de permisos..."\n\
+# Monitoreo de permisos en background\n\
 (\n\
     while true; do\n\
-        sleep 60  # Verificar cada minuto\n\
-        \n\
+        sleep 60\n\
         if [ -d "/data/fotos" ]; then\n\
-            # Buscar archivos con permisos incorrectos y corregirlos silenciosamente\n\
             find "/data/fotos" -type f ! -perm 664 -exec chmod 664 {} \\; 2>/dev/null || true\n\
             find "/data/fotos" -type d ! -perm 775 -exec chmod 775 {} \\; 2>/dev/null || true\n\
-            \n\
-            # Corregir ownership si es necesario (silenciosamente)\n\
             find "/data/fotos" \\( ! -user 33 -o ! -group 33 \\) -exec chown 33:33 {} \\; 2>/dev/null || true\n\
         fi\n\
     done\n\
 ) &\n\
 \n\
-echo "✅ Bot configurado correctamente. Iniciando aplicación..."\n\
-\n\
-# Ejecutar el bot con umask configurado\n\
-exec python bot.py' > /entrypoint.sh
+echo "✅ Iniciando bot..."\n\
+exec python3 bot.py' > /entrypoint.sh
 
-# Hacer ejecutable el script de entrada
+# Hacer ejecutable el script
 RUN chmod +x /entrypoint.sh
 
-# Crear directorio para logs si se necesita
-RUN mkdir -p /var/log/bot && chmod 755 /var/log/bot
-
-# Comando por defecto - usar el entrypoint
+# Comando por defecto
 CMD ["/entrypoint.sh"]
