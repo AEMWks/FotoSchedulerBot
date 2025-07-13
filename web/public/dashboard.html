@@ -3,9 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Dashboard de Análisis - Explora y analiza tu diario visual">
+    <meta name="theme-color" content="#8b5cf6">
+
     <title>Dashboard - Diario Visual</title>
-    <link rel="stylesheet" href="styles.css">
+
+    <!-- Estilos -->
+    <link rel="stylesheet" href="assets/css/styles.css">
+    <link rel="stylesheet" href="assets/css/components.css">
+    <link rel="stylesheet" href="assets/css/dashboard.css">
+
+    <!-- Favicon -->
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+
+    <!-- Preload de archivos críticos -->
+    <link rel="preload" href="assets/js/common.js" as="script">
+    <link rel="preload" href="assets/js/dashboard.js" as="script">
 </head>
 <body>
     <!-- Navigation Header -->
@@ -81,6 +94,7 @@
             <div class="analytics-card">
                 <div class="card-header">
                     <h3>📈 Estadísticas</h3>
+                    <button id="refresh-stats" class="refresh-btn-small" title="Actualizar">🔄</button>
                 </div>
                 <div class="card-content">
                     <div class="stat-grid">
@@ -152,6 +166,13 @@
             <div class="results-grid" id="results-grid">
                 <!-- Search results will be populated here -->
             </div>
+
+            <!-- Pagination for results -->
+            <div class="pagination" id="results-pagination" style="display: none;">
+                <button id="prev-page" class="pagination-btn">« Anterior</button>
+                <span id="page-info" class="page-info">Página 1 de 1</span>
+                <button id="next-page" class="pagination-btn">Siguiente »</button>
+            </div>
         </div>
 
         <!-- Export Options -->
@@ -189,6 +210,14 @@
                             <input type="radio" name="export-format" value="json">
                             <span>JSON (metadatos)</span>
                         </label>
+                    </div>
+
+                    <!-- Export Progress -->
+                    <div id="export-progress" class="export-progress" style="display: none;">
+                        <div class="progress-bar">
+                            <div class="progress-fill"></div>
+                        </div>
+                        <span class="progress-text">Preparando exportación...</span>
                     </div>
                 </div>
             </div>
@@ -246,6 +275,7 @@
                 <div class="memory-info">
                     <p id="memory-date" class="memory-date"></p>
                     <p id="memory-time" class="memory-time"></p>
+                    <p id="memory-description" class="memory-description"></p>
                 </div>
                 <div class="modal-actions">
                     <button onclick="getRandomMemory()" class="refresh-btn">🎲 Otro recuerdo</button>
@@ -255,6 +285,16 @@
         </div>
     </div>
 
-    <script src="dashboard.js"></script>
+    <!-- Scripts -->
+    <script src="assets/js/common.js"></script>
+    <script src="assets/js/components/calendar.js"></script>
+    <script src="assets/js/components/charts.js"></script>
+    <script src="assets/js/dashboard.js"></script>
+
+    <!-- Analytics (futuro) -->
+    <script>
+        // Google Analytics o similar para métricas de uso
+        // gtag('config', 'GA_MEASUREMENT_ID'); // Futuro
+    </script>
 </body>
 </html>

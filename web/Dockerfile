@@ -1,4 +1,4 @@
-# web/Dockerfile
+# web/Dockerfile (Actualizado para nueva estructura)
 FROM php:8.2-apache
 
 # Instalar extensiones necesarias
@@ -21,8 +21,8 @@ RUN sed -i 's/Group .*/Group www-data/' /etc/apache2/apache2.conf
 # Configurar Apache
 COPY apache-config.conf /etc/apache2/sites-available/000-default.conf
 
-# Copiar archivos de la aplicación
-COPY index.html /var/www/html/
+# Copiar archivos de la aplicación con nueva estructura
+COPY public/ /var/www/html/
 COPY .htaccess /var/www/html/
 COPY api/ /var/www/html/api/
 
@@ -43,25 +43,8 @@ RUN chown -R www-data:www-data /tmp/apache-tmp
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Crear un script de inicio que configure permisos y ejecute como www-data
-RUN echo '#!/bin/bash\n\
-# Configurar umask para que los archivos se creen con permisos correctos\n\
-umask 002\n\
-\n\
-# Ejecutar entrypoint como root para configurar permisos\n\
-/entrypoint.sh &\n\
-\n\
-# Esperar un momento para que se configuren los permisos\n\
-sleep 2\n\
-\n\
-# Ejecutar Apache como www-data\n\
-exec gosu www-data apache2-foreground' > /start.sh
-
 # Instalar gosu para cambiar de usuario de forma segura
 RUN apt-get update && apt-get install -y gosu && rm -rf /var/lib/apt/lists/*
-
-# Hacer ejecutable el script de inicio
-RUN chmod +x /start.sh
 
 # Configurar variables de entorno para Apache
 ENV APACHE_RUN_USER=www-data
@@ -77,6 +60,4 @@ RUN chown -R www-data:www-data /var/run/apache2 /var/lock/apache2 /var/log/apach
 # Exponer puerto 80
 EXPOSE 80
 
-# El contenedor se ejecutará como www-data cuando se use user: "33:33" en docker-compose
-# pero el entrypoint necesita ejecutarse como root para configurar permisos
 CMD ["/entrypoint.sh"]
