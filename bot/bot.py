@@ -4,6 +4,9 @@ import asyncio
 import json
 import tempfile
 import shutil
+import stat
+import pwd
+import grp
 from datetime import datetime, timedelta
 
 from telegram import Update
@@ -42,6 +45,69 @@ MAX_VIDEO_DURATION = 20  # segundos
 MIN_PHOTO_RESOLUTION = 1920 * 1080  # 1080p mínimo para fotos
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 
+# Configurar umask globalmente al inicio
+os.umask(0o002)
+
+# Función para configurar permisos de archivos y directorios
+def setup_file_permissions(file_path):
+    """Configura permisos correctos para un archivo o directorio"""
+    try:
+        # Obtener UID/GID de www-data
+        try:
+            www_data = pwd.getpwnam('www-data')
+            target_uid = www_data.pw_uid
+            target_gid = www_data.pw_gid
+        except KeyError:
+            # Fallback a UID/GID 33 si www-data no existe
+            target_uid = 33
+            target_gid = 33
+            print(f"⚠️ Usuario www-data no encontrado, usando UID/GID 33")
+
+        # Configurar ownership
+        try:
+            os.chown(file_path, target_uid, target_gid)
+        except (OSError, PermissionError) as e:
+            print(f"⚠️ No se pudo cambiar ownership de {file_path}: {e}")
+
+        # Configurar permisos según si es archivo o directorio
+        if os.path.isdir(file_path):
+            try:
+                os.chmod(file_path, 0o775)  # rwxrwxr-x para directorios
+            except (OSError, PermissionError) as e:
+                print(f"⚠️ No se pudieron configurar permisos de directorio {file_path}: {e}")
+        else:
+            try:
+                os.chmod(file_path, 0o664)  # rw-rw-r-- para archivos
+            except (OSError, PermissionError) as e:
+                print(f"⚠️ No se pudieron configurar permisos de archivo {file_path}: {e}")
+
+        return True
+    except Exception as e:
+        print(f"❌ Error configurando permisos para {file_path}: {e}")
+        return False
+
+def setup_directory_permissions(dir_path):
+    """Configura permisos para un directorio y toda su estructura padre"""
+    try:
+        # Crear la estructura de directorios si no existe
+        os.makedirs(dir_path, mode=0o775, exist_ok=True)
+
+        # Configurar permisos para toda la estructura
+        current_path = dir_path
+        while current_path != SAVE_PATH and current_path != '/':
+            if os.path.exists(current_path):
+                setup_file_permissions(current_path)
+            current_path = os.path.dirname(current_path)
+
+        # Configurar permisos del directorio base también
+        if os.path.exists(SAVE_PATH):
+            setup_file_permissions(SAVE_PATH)
+
+        return True
+    except Exception as e:
+        print(f"❌ Error configurando estructura de directorios {dir_path}: {e}")
+        return False
+
 # Función para obtener texto de requisitos
 def get_requirements_text():
     """Devuelve el texto con los requisitos de contenido"""
@@ -64,13 +130,28 @@ def get_requirements_text():
 # Ruta para guardar el plan en JSON
 def get_plan_json_path():
     today = datetime.now().strftime("%Y-%m-%d")
-    return f"{SAVE_PATH}/planificacion/{today}.json"
+    plan_dir = f"{SAVE_PATH}/planificacion"
+    plan_path = f"{plan_dir}/{today}.json"
+
+    # Asegurar que el directorio de planificación existe con permisos correctos
+    try:
+        os.makedirs(plan_dir, mode=0o775, exist_ok=True)
+        setup_file_permissions(plan_dir)
+    except Exception as e:
+        print(f"⚠️ Error creando directorio de planificación: {e}")
+
+    return plan_path
 
 def save_plan_json(plan):
     path = get_plan_json_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(plan, f)
+    try:
+        with open(path, "w") as f:
+            json.dump(plan, f, indent=2)
+        # Configurar permisos del archivo JSON
+        setup_file_permissions(path)
+        print(f"✅ Plan guardado en {path}")
+    except Exception as e:
+        print(f"❌ Error guardando plan: {e}")
 
 def load_plan_json():
     path = get_plan_json_path()
@@ -112,6 +193,36 @@ def generate_random_schedule():
 def format_notification_time(hour, minute):
     """Formatea la hora de notificación"""
     return f"{hour:02d}:{minute:02d}"
+
+def get_next_notification_time(plan, current_index):
+    """Obtiene la hora de la siguiente notificación"""
+    if current_index + 1 < len(plan):
+        next_entry = plan[current_index + 1]
+        return next_entry.get("hour", 23), next_entry.get("minute", 59)
+    else:
+        # Si es la última notificación del día, la ventana termina a las 23:59
+        return 23, 59
+
+def get_window_end_time_for_notification(plan, notification_index):
+    """Calcula la hora de fin de ventana (hasta la siguiente notificación)"""
+    end_hour, end_minute = get_next_notification_time(plan, notification_index)
+    return f"{end_hour:02d}:{end_minute:02d}"
+
+def is_notification_window_active(plan, notification_index, current_total_minutes):
+    """Verifica si la ventana de una notificación específica está activa"""
+    if notification_index >= len(plan):
+        return False
+
+    entry = plan[notification_index]
+    notification_hour = entry.get("hour", 8)
+    notification_minute = entry.get("minute", 0)
+    notification_total_minutes = notification_hour * 60 + notification_minute
+
+    # La ventana está activa desde la notificación hasta la siguiente notificación
+    end_hour, end_minute = get_next_notification_time(plan, notification_index)
+    window_end_minutes = end_hour * 60 + end_minute
+
+    return notification_total_minutes <= current_total_minutes < window_end_minutes
 
 # Funciones para validar contenido multimedia
 async def validate_video_duration(file_path):
@@ -195,37 +306,54 @@ def all_notifications_pending():
     return all(not entry.get("delivered", False) for entry in plan)
 
 # Enviar notificación al usuario con recordatorio de límites
-async def send_photo_request(app, hour):
+async def send_photo_request(app, notification_entry):
     try:
         now = datetime.now().strftime("%H:%M")
-        # Cargar el plan json
+        # Obtener el tipo directamente del entry que se pasa como parámetro
+        tipo = notification_entry.get("type", "foto")
+        hora_notificacion = notification_entry.get("hour", 8)
+        minuto_notificacion = notification_entry.get("minute", 0)
+        hora_programada = f"{hora_notificacion:02d}:{minuto_notificacion:02d}"
+
+        print(f"📢 Enviando notificación de {tipo} programada para las {hora_programada}", flush=True)
+
+        # Cargar el plan para calcular el fin de ventana
         plan = load_plan_json()
-        tipo = "foto"
+        window_end_text = "el final del día"
+
         if plan:
-            # Buscar el tipo para la hora actual
-            for entry in plan:
-                if entry["hour"] == hour:
-                    tipo = entry["type"]
+            # Encontrar el índice de esta notificación
+            notification_index = -1
+            for i, entry in enumerate(plan):
+                if (entry.get("hour") == hora_notificacion and
+                    entry.get("minute") == minuto_notificacion):
+                    notification_index = i
                     break
+
+            if notification_index >= 0:
+                window_end_text = f"las {get_window_end_time_for_notification(plan, notification_index)}"
 
         if tipo == "video":
             msg = (
                 f"🎥 **¡Hora de grabar!** Son las {now}\n"
                 f"Haz un video corto de lo que estás haciendo ahora.\n\n"
                 f"{get_requirements_text()}\n\n"
-                f"⚠️ **Importante:** El video será rechazado si excede los 20 segundos o 20MB."
+                f"⚠️ **Importante:** El video será rechazado si excede los 20 segundos o 20MB.\n"
+                f"⏰ **Tienes hasta {window_end_text} para enviarlo.**"
             )
         else:
             msg = (
                 f"📸 **¡Hora de fotografiar!** Son las {now}\n"
                 f"Haz una foto de lo que estás haciendo ahora.\n\n"
                 f"{get_requirements_text()}\n\n"
-                f"⚠️ **Importante:** La foto será rechazada si es menor a 1080p o mayor a 20MB."
+                f"⚠️ **Importante:** La foto será rechazada si es menor a 1080p o mayor a 20MB.\n"
+                f"⏰ **Tienes hasta {window_end_text} para enviarla.**"
             )
 
         await app.bot.send_message(chat_id=USER_ID, text=msg, parse_mode='Markdown')
+        print(f"✅ Notificación de {tipo} enviada correctamente", flush=True)
     except Exception as e:
-        print(f"Error enviando notificación: {e}")
+        print(f"❌ Error enviando notificación: {e}")
 
 # Función para verificar si el contenido enviado es del tipo correcto
 def check_content_type(update, expected_type):
@@ -244,10 +372,14 @@ def get_current_time_window(plan):
     now = datetime.now()
     current_hour = now.hour
     current_minute = now.minute
+    current_total_minutes = current_hour * 60 + current_minute
 
     print(f"🕐 Hora actual: {current_hour:02d}:{current_minute:02d}", flush=True)
 
-    # Buscar la ventana de tiempo actual
+    # Buscar la ventana activa (desde la notificación más reciente hasta la siguiente)
+    active_window = None
+    active_index = -1
+
     for i, entry in enumerate(plan):
         notification_hour = entry.get("hour", 8)
         notification_minute = entry.get("minute", 0)
@@ -255,22 +387,22 @@ def get_current_time_window(plan):
         # Debug: mostrar todas las ventanas
         print(f"🔍 Ventana {i}: Notificación a las {notification_hour:02d}:{notification_minute:02d}, tipo: {entry['type']}, entregado: {entry.get('delivered', False)}", flush=True)
 
-        # Convertir tiempo de notificación a minutos totales desde medianoche
-        notification_total_minutes = notification_hour * 60 + notification_minute
-        current_total_minutes = current_hour * 60 + current_minute
+        # Verificar si esta ventana está activa
+        if is_notification_window_active(plan, i, current_total_minutes):
+            end_hour, end_minute = get_next_notification_time(plan, i)
+            print(f"✅ Ventana activa encontrada: {notification_hour:02d}:{notification_minute:02d} hasta {end_hour:02d}:{end_minute:02d}", flush=True)
 
-        # Permitir 2 horas (120 minutos) después de cada notificación
-        window_end_minutes = notification_total_minutes + 120
+            # Si no hemos encontrado una ventana activa aún, o esta es más reciente
+            if active_window is None or i > active_index:
+                active_window = entry
+                active_index = i
 
-        # Si estamos en la ventana de tiempo
-        if notification_total_minutes <= current_total_minutes < window_end_minutes:
-            window_end_hour = (window_end_minutes // 60)
-            window_end_minute = window_end_minutes % 60
-            print(f"✅ Ventana activa encontrada: {notification_hour:02d}:{notification_minute:02d}-{window_end_hour:02d}:{window_end_minute:02d}", flush=True)
-            return i, entry
+    if active_window is None:
+        print("❌ No hay ventana activa", flush=True)
+        return None, None
 
-    print("❌ No hay ventana activa", flush=True)
-    return None, None
+    print(f"🎯 Ventana activa elegida: índice {active_index}, tipo {active_window['type']}", flush=True)
+    return active_index, active_window
 
 # Función auxiliar para mostrar el estado actualizado
 async def show_updated_status(context, plan):
@@ -285,13 +417,16 @@ async def show_updated_status(context, plan):
 
     # Encontrar próxima notificación pendiente
     now = datetime.now()
-    current_hour = now.hour
+    current_total_minutes = now.hour * 60 + now.minute
     next_notification = None
 
     for entry in updated_plan:
-        notification_hour = 8 + entry["hour"]
-        if notification_hour > current_hour and not entry.get("delivered", False):
-            next_notification = f"{notification_hour:02d}:00"
+        notification_hour = entry.get("hour", 8)
+        notification_minute = entry.get("minute", 0)
+        notification_total_minutes = notification_hour * 60 + notification_minute
+
+        if notification_total_minutes > current_total_minutes and not entry.get("delivered", False):
+            next_notification = format_notification_time(notification_hour, notification_minute)
             break
 
     status_msg = f"📈 **Progreso:** {delivered_count}/{total_count} completadas"
@@ -301,6 +436,33 @@ async def show_updated_status(context, plan):
         status_msg += f"\n🎉 **¡Todas las notificaciones completadas!**"
 
     await context.bot.send_message(chat_id=USER_ID, text=status_msg, parse_mode='Markdown')
+
+# Función para guardar archivo con manejo mejorado de permisos
+def save_file_with_permissions(temp_path, final_path):
+    """Guarda un archivo desde ubicación temporal a final con permisos correctos"""
+    try:
+        # Asegurar que el directorio destino existe con permisos correctos
+        dest_dir = os.path.dirname(final_path)
+        setup_directory_permissions(dest_dir)
+
+        # Mover archivo de temporal a ubicación final
+        shutil.move(temp_path, final_path)
+
+        # Configurar permisos del archivo guardado
+        setup_file_permissions(final_path)
+
+        print(f"✅ Archivo guardado con permisos correctos: {final_path}")
+        return True
+
+    except Exception as e:
+        print(f"❌ Error guardando archivo {final_path}: {e}")
+        # Limpiar archivo temporal si existe
+        if os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+        return False
 
 # Guardar foto/video que el usuario envía
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -357,21 +519,42 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Verificar si ya se completó esta notificación
     if current_window.get("delivered", False):
-        # Ya se completó esta notificación, buscar la siguiente
+        # Esta ventana específica ya está completada
+        # Buscar si hay otras ventanas activas pendientes
         now = datetime.now()
-        next_notification = None
-        for entry in plan:
-            notification_hour = 8 + entry["hour"]
-            if notification_hour > now.hour and not entry.get("delivered", False):
-                next_notification = f"{notification_hour:02d}:00"
-                break
+        current_total_minutes = now.hour * 60 + now.minute
 
-        if next_notification:
-            await context.bot.send_message(chat_id=USER_ID, text=f"✅ Ya completaste esta notificación. La próxima será a las {next_notification}.")
+        # Buscar ventanas activas pendientes
+        pending_active_windows = []
+        for i, entry in enumerate(plan):
+            if (is_notification_window_active(plan, i, current_total_minutes) and
+                not entry.get("delivered", False)):
+                pending_active_windows.append((i, entry))
+
+        if pending_active_windows:
+            # Hay otras ventanas activas pendientes, usar la más reciente
+            window_index, current_window = max(pending_active_windows,
+                                             key=lambda x: x[1].get("hour", 8) * 60 + x[1].get("minute", 0))
+            print(f"🔄 Redirigiendo a ventana pendiente más reciente: índice {window_index}", flush=True)
+            # Continuar con el procesamiento normal
         else:
-            await context.bot.send_message(chat_id=USER_ID, text="✅ Ya completaste todas las notificaciones de hoy.")
-        print("Intento de envío en notificación ya completada", flush=True)
-        return
+            # No hay ventanas activas pendientes, buscar la siguiente
+            next_notification = None
+            for entry in plan:
+                notification_hour = entry.get("hour", 8)
+                notification_minute = entry.get("minute", 0)
+                notification_total_minutes = notification_hour * 60 + notification_minute
+
+                if notification_total_minutes > current_total_minutes and not entry.get("delivered", False):
+                    next_notification = format_notification_time(notification_hour, notification_minute)
+                    break
+
+            if next_notification:
+                await context.bot.send_message(chat_id=USER_ID, text=f"✅ Ya completaste esta notificación. La próxima será a las {next_notification}.")
+            else:
+                await context.bot.send_message(chat_id=USER_ID, text="✅ Ya completaste todas las notificaciones de hoy.")
+            print("Intento de envío en notificación ya completada", flush=True)
+            return
 
     # Verificar tipo de contenido
     expected_type = current_window["type"]
@@ -410,7 +593,11 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         day = now.strftime("%d")
         hour = now.strftime("%H-%M-%S")
         dir_path = f"{SAVE_PATH}/{year}/{month}/{day}"
-        os.makedirs(dir_path, exist_ok=True)
+
+        # Configurar estructura de directorios con permisos correctos
+        if not setup_directory_permissions(dir_path):
+            await context.bot.send_message(chat_id=USER_ID, text="❌ Error configurando directorio de destino.")
+            return
 
         # Verificar si es mensaje de texto (no contenido multimedia)
         if update.message.text:
@@ -475,23 +662,24 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     print(f"Foto con resolución insuficiente: {width}x{height}", flush=True)
                     return
 
-                # Mover archivo a ubicación final usando shutil para evitar cross-device link error
+                # Guardar archivo con permisos correctos
                 final_path = f"{dir_path}/{hour}.jpg"
-                shutil.move(temp_path, final_path)
-
-                # Marcar como entregado
-                update_delivery_state(window_index, True)
-                await context.bot.send_message(
-                    chat_id=USER_ID,
-                    text=(
-                        f"✅ **Foto recibida y guardada**\n"
-                        f"📏 **Resolución:** {format_resolution(width, height)}\n"
-                        f"📦 **Tamaño:** {get_file_size_mb(file_size)}"
-                    ),
-                    parse_mode='Markdown'
-                )
-                print(f"Foto guardada: {final_path} - Resolución: {width}x{height}", flush=True)
-                await show_updated_status(context, None)
+                if save_file_with_permissions(temp_path, final_path):
+                    # Marcar como entregado
+                    update_delivery_state(window_index, True)
+                    await context.bot.send_message(
+                        chat_id=USER_ID,
+                        text=(
+                            f"✅ **Foto recibida y guardada**\n"
+                            f"📏 **Resolución:** {format_resolution(width, height)}\n"
+                            f"📦 **Tamaño:** {get_file_size_mb(file_size)}"
+                        ),
+                        parse_mode='Markdown'
+                    )
+                    print(f"Foto guardada: {final_path} - Resolución: {width}x{height}", flush=True)
+                    await show_updated_status(context, None)
+                else:
+                    await context.bot.send_message(chat_id=USER_ID, text="❌ Error guardando la foto.")
                 return
 
         # Procesar video
@@ -521,23 +709,24 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     print(f"Video demasiado largo: {duration:.1f}s", flush=True)
                     return
 
-                # Mover archivo a ubicación final usando shutil para evitar cross-device link error
+                # Guardar archivo con permisos correctos
                 final_path = f"{dir_path}/{hour}.mp4"
-                shutil.move(temp_path, final_path)
-
-                # Marcar como entregado
-                update_delivery_state(window_index, True)
-                await context.bot.send_message(
-                    chat_id=USER_ID,
-                    text=(
-                        f"✅ **Video recibido y guardado**\n"
-                        f"⏱️ **Duración:** {format_duration(duration)}\n"
-                        f"📦 **Tamaño:** {get_file_size_mb(file_size)}"
-                    ),
-                    parse_mode='Markdown'
-                )
-                print(f"Video guardado: {final_path} - Duración: {duration:.1f}s", flush=True)
-                await show_updated_status(context, None)
+                if save_file_with_permissions(temp_path, final_path):
+                    # Marcar como entregado
+                    update_delivery_state(window_index, True)
+                    await context.bot.send_message(
+                        chat_id=USER_ID,
+                        text=(
+                            f"✅ **Video recibido y guardado**\n"
+                            f"⏱️ **Duración:** {format_duration(duration)}\n"
+                            f"📦 **Tamaño:** {get_file_size_mb(file_size)}"
+                        ),
+                        parse_mode='Markdown'
+                    )
+                    print(f"Video guardado: {final_path} - Duración: {duration:.1f}s", flush=True)
+                    await show_updated_status(context, None)
+                else:
+                    await context.bot.send_message(chat_id=USER_ID, text="❌ Error guardando el video.")
                 return
 
         # Procesar documento
@@ -571,23 +760,24 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         print(f"Imagen con resolución insuficiente: {width}x{height}", flush=True)
                         return
 
-                    # Mover archivo a ubicación final usando shutil para evitar cross-device link error
+                    # Guardar archivo con permisos correctos
                     final_path = f"{dir_path}/{hour}_{doc.file_name}"
-                    shutil.move(temp_path, final_path)
-
-                    # Marcar como entregado
-                    update_delivery_state(window_index, True)
-                    await context.bot.send_message(
-                        chat_id=USER_ID,
-                        text=(
-                            f"✅ **Imagen recibida y guardada**\n"
-                            f"📏 **Resolución:** {format_resolution(width, height)}\n"
-                            f"📦 **Tamaño:** {get_file_size_mb(file_size)}"
-                        ),
-                        parse_mode='Markdown'
-                    )
-                    print(f"Imagen guardada: {final_path} - Resolución: {width}x{height}", flush=True)
-                    await show_updated_status(context, None)
+                    if save_file_with_permissions(temp_path, final_path):
+                        # Marcar como entregado
+                        update_delivery_state(window_index, True)
+                        await context.bot.send_message(
+                            chat_id=USER_ID,
+                            text=(
+                                f"✅ **Imagen recibida y guardada**\n"
+                                f"📏 **Resolución:** {format_resolution(width, height)}\n"
+                                f"📦 **Tamaño:** {get_file_size_mb(file_size)}"
+                            ),
+                            parse_mode='Markdown'
+                        )
+                        print(f"Imagen guardada: {final_path} - Resolución: {width}x{height}", flush=True)
+                        await show_updated_status(context, None)
+                    else:
+                        await context.bot.send_message(chat_id=USER_ID, text="❌ Error guardando la imagen.")
                     return
 
             elif filename.endswith((".mp4", ".mov", ".hevc")):
@@ -615,23 +805,24 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         print(f"Video demasiado largo: {duration:.1f}s", flush=True)
                         return
 
-                    # Mover archivo a ubicación final usando shutil para evitar cross-device link error
+                    # Guardar archivo con permisos correctos
                     final_path = f"{dir_path}/{hour}_{doc.file_name}"
-                    shutil.move(temp_path, final_path)
-
-                    # Marcar como entregado
-                    update_delivery_state(window_index, True)
-                    await context.bot.send_message(
-                        chat_id=USER_ID,
-                        text=(
-                            f"✅ **Video recibido y guardado**\n"
-                            f"⏱️ **Duración:** {format_duration(duration)}\n"
-                            f"📦 **Tamaño:** {get_file_size_mb(file_size)}"
-                        ),
-                        parse_mode='Markdown'
-                    )
-                    print(f"Video guardado: {final_path} - Duración: {duration:.1f}s", flush=True)
-                    await show_updated_status(context, None)
+                    if save_file_with_permissions(temp_path, final_path):
+                        # Marcar como entregado
+                        update_delivery_state(window_index, True)
+                        await context.bot.send_message(
+                            chat_id=USER_ID,
+                            text=(
+                                f"✅ **Video recibido y guardado**\n"
+                                f"⏱️ **Duración:** {format_duration(duration)}\n"
+                                f"📦 **Tamaño:** {get_file_size_mb(file_size)}"
+                            ),
+                            parse_mode='Markdown'
+                        )
+                        print(f"Video guardado: {final_path} - Duración: {duration:.1f}s", flush=True)
+                        await show_updated_status(context, None)
+                    else:
+                        await context.bot.send_message(chat_id=USER_ID, text="❌ Error guardando el video.")
                     return
             else:
                 await context.bot.send_message(
@@ -690,10 +881,11 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if entry.get("delivered", False):
             status_emoji = "✅"
             status_text += f"{status_emoji} {time_str} - {type_emoji} {entry['type'].upper()} - **ENTREGADO**\n"
-        elif notification_total_minutes <= current_total_minutes < notification_total_minutes + 120:
+        elif is_notification_window_active(plan, i, current_total_minutes):
             status_emoji = "🔔"
-            status_text += f"{status_emoji} {time_str} - {type_emoji} {entry['type'].upper()} - **PENDIENTE** (ventana activa)\n"
-        elif current_total_minutes >= notification_total_minutes + 120:
+            end_hour, end_minute = get_next_notification_time(plan, i)
+            status_text += f"{status_emoji} {time_str} - {type_emoji} {entry['type'].upper()} - **PENDIENTE** (hasta {end_hour:02d}:{end_minute:02d})\n"
+        elif current_total_minutes >= notification_total_minutes:
             status_emoji = "⏰"
             status_text += f"{status_emoji} {time_str} - {type_emoji} {entry['type'].upper()} - **PERDIDO** (ventana cerrada)\n"
         else:
@@ -726,7 +918,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_text += f"\n\n{get_requirements_text()}"
 
     # Añadir recordatorio de ventana de tiempo
-    status_text += f"\n\n⏰ **Recordatorio:** Tienes 2 horas desde cada notificación para enviar el contenido."
+    status_text += f"\n\n⏰ **Recordatorio:** Cada notificación es válida hasta que llegue la siguiente notificación."
 
     await context.bot.send_message(chat_id=USER_ID, text=status_text, parse_mode='Markdown')
 
@@ -772,6 +964,11 @@ async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         info_text += "✅ **Todas las validaciones activas**\n"
 
     info_text += f"\n📁 **Ruta de guardado:** {SAVE_PATH}\n"
+    info_text += f"🔧 **Configuración de permisos:**\n"
+    info_text += f"• Umask actual: {oct(os.umask(0o002))[2:]}\n"
+    info_text += f"• Archivos: 664 (rw-rw-r--)\n"
+    info_text += f"• Directorios: 775 (rwxrwxr-x)\n"
+    info_text += f"• Owner: www-data (33:33)\n\n"
     info_text += f"📏 **Límites configurados:**\n"
     info_text += f"• Fotos: Mínimo 1080p\n"
     info_text += f"• Videos: Máximo {MAX_VIDEO_DURATION}s\n"
@@ -793,31 +990,38 @@ async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     now = datetime.now()
     current_hour = now.hour
+    current_minute = now.minute
 
     debug_text = f"🔍 **Debug ventanas de tiempo**\n\n"
-    debug_text += f"⏰ **Hora actual:** {current_hour:02d}:{now.minute:02d}\n\n"
+    debug_text += f"⏰ **Hora actual:** {current_hour:02d}:{current_minute:02d}\n\n"
 
     active_window = None
 
     for i, entry in enumerate(plan):
-        notification_hour = 8 + entry["hour"]
-        window_end = notification_hour + 2
+        notification_hour = entry.get("hour", 8)
+        notification_minute = entry.get("minute", 0)
+        notification_total_minutes = notification_hour * 60 + notification_minute
+        current_total_minutes = current_hour * 60 + current_minute
+        window_end_minutes = notification_total_minutes + 120
+        window_end_hour = window_end_minutes // 60
+        window_end_minute = window_end_minutes % 60
 
         status = ""
         if entry.get("delivered", False):
             status = "✅ ENTREGADO"
-        elif notification_hour <= current_hour < window_end:
+        elif is_notification_window_active(plan, i, current_total_minutes):
             status = "🔔 VENTANA ACTIVA"
             active_window = i
-        elif current_hour >= window_end:
+        elif current_total_minutes >= notification_total_minutes:
             status = "⏰ VENTANA CERRADA"
         else:
             status = "⏳ PROGRAMADO"
 
+        end_hour, end_minute = get_next_notification_time(plan, i)
         debug_text += (
             f"**Ventana {i+1}:**\n"
-            f"• Notificación: {notification_hour:02d}:00\n"
-            f"• Ventana: {notification_hour:02d}:00-{window_end:02d}:00\n"
+            f"• Notificación: {notification_hour:02d}:{notification_minute:02d}\n"
+            f"• Ventana: {notification_hour:02d}:{notification_minute:02d} hasta {end_hour:02d}:{end_minute:02d}\n"
             f"• Tipo: {entry['type']}\n"
             f"• Estado: {status}\n\n"
         )
@@ -829,6 +1033,84 @@ async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         debug_text += "⏰ **No hay ventana activa en este momento**"
 
     await context.bot.send_message(chat_id=USER_ID, text=debug_text, parse_mode='Markdown')
+
+# Comando para debug del scheduler
+async def scheduler_debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando para debug del scheduler"""
+    if update.effective_user.id != USER_ID:
+        await context.bot.send_message(chat_id=update.effective_user.id, text="❌ No tienes permisos para usar este bot.")
+        return
+
+    try:
+        scheduler = getattr(context.application, 'scheduler', None)
+        if not scheduler:
+            await context.bot.send_message(chat_id=USER_ID, text="❌ Scheduler no disponible.")
+            return
+
+        jobs = scheduler.get_jobs()
+        debug_text = f"🔧 **Debug Scheduler**\n\n"
+        debug_text += f"📊 **Jobs programados:** {len(jobs)}\n\n"
+
+        for job in jobs:
+            debug_text += f"**Job ID:** {job.id}\n"
+            debug_text += f"**Próxima ejecución:** {job.next_run_time}\n"
+            debug_text += f"**Función:** {job.func.__name__}\n\n"
+
+        await context.bot.send_message(chat_id=USER_ID, text=debug_text, parse_mode='Markdown')
+
+    except Exception as e:
+        await context.bot.send_message(chat_id=USER_ID, text=f"❌ Error en scheduler debug: {e}")
+
+# Comando para verificar permisos del directorio
+async def permissions_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando para verificar y mostrar información de permisos"""
+    if update.effective_user.id != USER_ID:
+        await context.bot.send_message(chat_id=update.effective_user.id, text="❌ No tienes permisos para usar este bot.")
+        return
+
+    try:
+        permissions_text = "🔧 **Estado de permisos:**\n\n"
+
+        # Verificar directorio base
+        if os.path.exists(SAVE_PATH):
+            stat_info = os.stat(SAVE_PATH)
+            permissions_text += f"📁 **{SAVE_PATH}:**\n"
+            permissions_text += f"• Permisos: {oct(stat_info.st_mode)[-3:]}\n"
+            permissions_text += f"• Owner: {stat_info.st_uid}:{stat_info.st_gid}\n"
+            permissions_text += f"• Escribible: {'✅' if os.access(SAVE_PATH, os.W_OK) else '❌'}\n\n"
+        else:
+            permissions_text += f"❌ **{SAVE_PATH} no existe**\n\n"
+
+        # Verificar umask actual
+        current_umask = os.umask(0o002)  # Leer y restaurar
+        os.umask(current_umask)
+        permissions_text += f"🔧 **Configuración actual:**\n"
+        permissions_text += f"• Umask: {oct(current_umask)[2:]}\n"
+        permissions_text += f"• Archivos nuevos: {oct(0o666 & ~current_umask)[2:]}\n"
+        permissions_text += f"• Directorios nuevos: {oct(0o777 & ~current_umask)[2:]}\n\n"
+
+        # Verificar algunos archivos recientes
+        permissions_text += "📄 **Archivos recientes:**\n"
+        file_count = 0
+        for root, dirs, files in os.walk(SAVE_PATH):
+            for file in sorted(files)[-3:]:  # Solo los 3 más recientes
+                if file_count >= 3:
+                    break
+                file_path = os.path.join(root, file)
+                try:
+                    stat_info = os.stat(file_path)
+                    permissions_text += f"• {file}: {oct(stat_info.st_mode)[-3:]} ({stat_info.st_uid}:{stat_info.st_gid})\n"
+                    file_count += 1
+                except:
+                    continue
+
+        if file_count == 0:
+            permissions_text += "• No hay archivos recientes\n"
+
+        await context.bot.send_message(chat_id=USER_ID, text=permissions_text, parse_mode='Markdown')
+
+    except Exception as e:
+        await context.bot.send_message(chat_id=USER_ID, text=f"❌ Error verificando permisos: {e}")
 
 # Función para programar una notificación con minutos
 async def schedule_notification(scheduler, app, notification_data):
@@ -846,11 +1128,51 @@ async def schedule_notification(scheduler, app, notification_data):
     scheduler.add_job(
         send_photo_request,
         CronTrigger(hour=target_hour, minute=target_minute),
-        args=[app, notification_data],
+        args=[app, notification_data],  # Pasar el entry completo en lugar de solo la hora
         id=job_id,
         replace_existing=True
     )
-    print(f"Programada notificación para las {target_hour:02d}:{target_minute:02d} usando scheduler")
+    print(f"Programada notificación de {notification_data.get('type', 'foto')} para las {target_hour:02d}:{target_minute:02d} usando scheduler")
+
+# Función para enviar notificaciones perdidas que aún están en ventana activa
+async def send_missed_notifications_in_window(app):
+    """Envía notificaciones que ya pasaron pero aún están en ventana activa"""
+    try:
+        plan = load_plan_json()
+        if not plan:
+            return
+
+        now = datetime.now()
+        current_total_minutes = now.hour * 60 + now.minute
+        notifications_sent = 0
+
+        print("🔍 Verificando notificaciones perdidas que aún están en ventana activa...")
+
+        for i, entry in enumerate(plan):
+            notification_hour = entry.get("hour", 8)
+            notification_minute = entry.get("minute", 0)
+            notification_total_minutes = notification_hour * 60 + notification_minute
+            is_delivered = entry.get("delivered", False)
+
+            # Verificar si la ventana está activa y la notificación no está entregada
+            if (is_notification_window_active(plan, i, current_total_minutes) and
+                notification_total_minutes <= current_total_minutes and
+                not is_delivered):
+
+                end_hour, end_minute = get_next_notification_time(plan, i)
+                print(f"📢 Reenviando notificación perdida: {entry['type']} de las {notification_hour:02d}:{notification_minute:02d} (ventana hasta {end_hour:02d}:{end_minute:02d})")
+
+                # Enviar la notificación inmediatamente
+                await send_photo_request(app, entry)
+                notifications_sent += 1
+
+        if notifications_sent > 0:
+            print(f"✅ Se reenviaron {notifications_sent} notificaciones perdidas")
+        else:
+            print("✅ No hay notificaciones perdidas en ventana activa")
+
+    except Exception as e:
+        print(f"❌ Error verificando notificaciones perdidas: {e}")
 
 # Generar horarios aleatorios y programar notificaciones
 async def schedule_today(app, scheduler=None):
@@ -860,6 +1182,9 @@ async def schedule_today(app, scheduler=None):
         if plan is None:
             plan = generate_random_schedule()
             save_plan_json(plan)
+
+        # Verificar y enviar notificaciones perdidas que aún están en ventana activa
+        await send_missed_notifications_in_window(app)
 
         # Programar solo las notificaciones que aún no han llegado
         now = datetime.now()
@@ -899,6 +1224,10 @@ async def main():
         if not CV2_AVAILABLE:
             print("⚠️ Validación de duración de videos deshabilitada")
 
+        # Configurar permisos iniciales
+        print("🔧 Configurando permisos iniciales...")
+        setup_directory_permissions(SAVE_PATH)
+
         # Crear la aplicación
         app = ApplicationBuilder().token(TOKEN).build()
 
@@ -907,12 +1236,17 @@ async def main():
         app.add_handler(CommandHandler("status", status_command))
         app.add_handler(CommandHandler("info", info_command))
         app.add_handler(CommandHandler("debug", debug_command))
+        app.add_handler(CommandHandler("scheduler", scheduler_debug_command))
+        app.add_handler(CommandHandler("permisos", permissions_command))
 
         # Handler para mensajes (debe ir después de los comandos)
         app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.TEXT, photo_handler))
 
         # Crear y configurar el scheduler
         scheduler = AsyncIOScheduler()
+
+        # Guardar referencia del scheduler en la aplicación para debug
+        app.scheduler = scheduler
 
         # Job para programar nuevas notificaciones cada día a medianoche
         scheduler.add_job(
@@ -926,7 +1260,7 @@ async def main():
         # Programar hoy si no existe
         await schedule_today(app, scheduler)
 
-        print("✅ Bot en marcha con planificación diaria y validaciones de contenido.")
+        print("✅ Bot en marcha con planificación diaria, validaciones de contenido y gestión de permisos.")
 
         # Iniciar el bot
         await app.initialize()

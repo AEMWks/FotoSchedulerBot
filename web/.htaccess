@@ -1,0 +1,10 @@
+# web/.htaccess
+RewriteEngine On
+
+# Headers CORS
+Header always set Access-Control-Allow-Origin "*"
+Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS"
+Header always set Access-Control-Allow-Headers "Content-Type"
+
+# Regla opcional para URLs amigables (por ahora comentada)
+# RewriteRule ^api/photos/([0-9]{4})/([0-9]{2})/([0-9]{2})/?$ /api/photos.php?year=$1&month=$2&day=$3 [L,QSA]
