@@ -1,6 +1,10 @@
-# Dependencias esenciales
+# Bot de Telegram
 python-telegram-bot==20.8
+
+# Programador de tareas
 APScheduler==3.10.4
+
+# Procesamiento de imágenes
 Pillow==10.1.0
 
-# OpenCV opcional (se instala desde Dockerfile con fallback)
+# Nota: NumPy y OpenCV se instalan desde el Dockerfile para mejor control

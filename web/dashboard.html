@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Diario Visual</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+</head>
+<body>
+    <!-- Navigation Header -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <span class="brand-icon">📸</span>
+                <span class="brand-text">Diario Visual</span>
+            </div>
+
+            <div class="nav-menu">
+                <a href="index.html" class="nav-link">
+                    <span class="nav-icon">🏠</span>
+                    Feed
+                </a>
+                <a href="dashboard.html" class="nav-link active">
+                    <span class="nav-icon">📊</span>
+                    Dashboard
+                </a>
+                <button id="theme-toggle" class="theme-btn" title="Cambiar tema">
+                    <span class="theme-icon">🌙</span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Dashboard Header -->
+        <div class="dashboard-header">
+            <h1>📊 Dashboard</h1>
+            <p>Explora y analiza tu diario visual</p>
+        </div>
+
+        <!-- Search and Filters -->
+        <div class="search-section">
+            <div class="search-container">
+                <div class="search-input-group">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="search-input" placeholder="Buscar por fecha (YYYY-MM-DD) o tipo (foto/video)...">
+                    <button id="search-btn" class="search-button">Buscar</button>
+                </div>
+
+                <div class="filter-group">
+                    <select id="type-filter" class="filter-select">
+                        <option value="all">Todos los tipos</option>
+                        <option value="foto">Solo fotos</option>
+                        <option value="video">Solo videos</option>
+                    </select>
+
+                    <select id="date-range" class="filter-select">
+                        <option value="all">Todo el tiempo</option>
+                        <option value="today">Hoy</option>
+                        <option value="week">Esta semana</option>
+                        <option value="month">Este mes</option>
+                        <option value="custom">Rango personalizado</option>
+                    </select>
+
+                    <button id="clear-filters" class="clear-btn">Limpiar</button>
+                </div>
+
+                <!-- Custom Date Range -->
+                <div id="custom-date-range" class="custom-date-range" style="display: none;">
+                    <input type="date" id="start-date" class="date-input">
+                    <span class="date-separator">a</span>
+                    <input type="date" id="end-date" class="date-input">
+                    <button id="apply-date-range" class="apply-btn">Aplicar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analytics Grid -->
+        <div class="analytics-grid">
+            <div class="analytics-card">
+                <div class="card-header">
+                    <h3>📈 Estadísticas</h3>
+                </div>
+                <div class="card-content">
+                    <div class="stat-grid">
+                        <div class="stat-box">
+                            <div class="stat-value" id="total-count">0</div>
+                            <div class="stat-title">Total</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="photo-count">0</div>
+                            <div class="stat-title">Fotos</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="video-count">0</div>
+                            <div class="stat-title">Videos</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="avg-per-day">0</div>
+                            <div class="stat-title">Promedio/día</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="analytics-card">
+                <div class="card-header">
+                    <h3>📅 Actividad por día</h3>
+                </div>
+                <div class="card-content">
+                    <canvas id="activity-chart" width="400" height="200"></canvas>
+                </div>
+            </div>
+
+            <div class="analytics-card">
+                <div class="card-header">
+                    <h3>🕐 Horas más activas</h3>
+                </div>
+                <div class="card-content">
+                    <div id="hours-chart" class="hours-grid"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Calendar View -->
+        <div class="calendar-section">
+            <div class="calendar-card">
+                <div class="calendar-header">
+                    <h3>📅 Vista de Calendario</h3>
+                    <div class="calendar-controls">
+                        <button id="prev-month" class="calendar-btn">‹</button>
+                        <span id="current-month" class="calendar-month">Enero 2025</span>
+                        <button id="next-month" class="calendar-btn">›</button>
+                        <button id="today-btn" class="today-btn">Hoy</button>
+                    </div>
+                </div>
+                <div class="calendar-content">
+                    <div class="calendar-grid" id="calendar-grid">
+                        <!-- Calendar will be generated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search Results / Filtered Content -->
+        <div class="results-section" id="results-section" style="display: none;">
+            <div class="results-header">
+                <h3 id="results-title">Resultados de búsqueda</h3>
+                <span id="results-count" class="results-count">0 elementos encontrados</span>
+            </div>
+            <div class="results-grid" id="results-grid">
+                <!-- Search results will be populated here -->
+            </div>
+        </div>
+
+        <!-- Export Options -->
+        <div class="export-section">
+            <div class="export-card">
+                <div class="card-header">
+                    <h3>📥 Exportar datos</h3>
+                </div>
+                <div class="card-content">
+                    <div class="export-options">
+                        <button id="export-day" class="export-btn">
+                            <span class="btn-icon">📅</span>
+                            Exportar día específico
+                        </button>
+                        <button id="export-week" class="export-btn">
+                            <span class="btn-icon">📊</span>
+                            Exportar esta semana
+                        </button>
+                        <button id="export-month" class="export-btn">
+                            <span class="btn-icon">📈</span>
+                            Exportar este mes
+                        </button>
+                        <button id="export-all" class="export-btn">
+                            <span class="btn-icon">💾</span>
+                            Exportar todo
+                        </button>
+                    </div>
+
+                    <div class="export-formats">
+                        <label class="export-format">
+                            <input type="radio" name="export-format" value="zip" checked>
+                            <span>ZIP (fotos originales)</span>
+                        </label>
+                        <label class="export-format">
+                            <input type="radio" name="export-format" value="json">
+                            <span>JSON (metadatos)</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="quick-actions">
+            <button id="bulk-download" class="action-btn" title="Descargar selección">
+                <span class="btn-icon">📦</span>
+                Descarga masiva
+            </button>
+            <button id="random-memory" class="action-btn" title="Recuerdo aleatorio">
+                <span class="btn-icon">🎲</span>
+                Recuerdo al azar
+            </button>
+            <button id="slideshow-all" class="action-btn" title="Presentación de todo">
+                <span class="btn-icon">🎬</span>
+                Slideshow completo
+            </button>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div class="modal-overlay" id="export-modal" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>📥 Exportar fotos</h3>
+                <button onclick="closeExportModal()" class="modal-close">×</button>
+            </div>
+            <div class="modal-content">
+                <p>Selecciona la fecha para exportar:</p>
+                <input type="date" id="export-date" class="date-input">
+                <div class="modal-actions">
+                    <button onclick="closeExportModal()" class="cancel-btn">Cancelar</button>
+                    <button onclick="confirmExport()" class="confirm-btn">Exportar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Random Memory Modal -->
+    <div class="modal-overlay" id="memory-modal" style="display: none;">
+        <div class="modal memory-modal">
+            <div class="modal-header">
+                <h3>🎲 Recuerdo al azar</h3>
+                <button onclick="closeMemoryModal()" class="modal-close">×</button>
+            </div>
+            <div class="modal-content">
+                <div class="memory-content">
+                    <img id="random-image" class="memory-image" style="display: none;">
+                    <video id="random-video" class="memory-video" style="display: none;" controls>
+                        <source id="random-video-source" type="video/mp4">
+                    </video>
+                </div>
+                <div class="memory-info">
+                    <p id="memory-date" class="memory-date"></p>
+                    <p id="memory-time" class="memory-time"></p>
+                </div>
+                <div class="modal-actions">
+                    <button onclick="getRandomMemory()" class="refresh-btn">🎲 Otro recuerdo</button>
+                    <button onclick="closeMemoryModal()" class="close-btn">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>

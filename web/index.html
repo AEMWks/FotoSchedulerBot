@@ -3,670 +3,152 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Feed de Fotos</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            color: #333;
-        }
-
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            position: sticky;
-            top: 20px;
-            z-index: 100;
-        }
-
-        .header h1 {
-            color: white;
-            font-size: 2.5em;
-            margin-bottom: 15px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
-        }
-
-        .stats {
-            color: rgba(255, 255, 255, 0.9);
-            font-size: 0.9em;
-        }
-
-        .loading {
-            text-align: center;
-            color: white;
-            font-size: 1.2em;
-            margin: 20px 0;
-            padding: 20px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-        }
-
-        .feed-container {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-
-        .diary-entry {
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 15px;
-            padding: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            animation: fadeIn 0.5s ease-in-out;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .entry-date {
-            font-size: 1.3em;
-            font-weight: bold;
-            color: #5a67d8;
-            margin-bottom: 15px;
-            text-align: center;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #e2e8f0;
-        }
-
-        .media-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 15px;
-            margin-top: 15px;
-        }
-
-        .media-item {
-            position: relative;
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-            transition: transform 0.3s ease;
-        }
-
-        .media-item:hover {
-            transform: scale(1.05);
-        }
-
-        .media-item img, .media-item video {
-            width: 100%;
-            height: 180px;
-            object-fit: cover;
-            display: block;
-        }
-
-        .media-timestamp {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
-            color: white;
-            padding: 15px 10px 10px;
-            font-size: 0.8em;
-            text-align: center;
-        }
-
-        .no-photos {
-            text-align: center;
-            color: #666;
-            font-size: 1.1em;
-            margin: 40px 0;
-            padding: 20px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-        }
-
-        .load-more-indicator {
-            text-align: center;
-            padding: 20px;
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 1em;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-            margin: 20px 0;
-        }
-
-        .end-of-feed {
-            text-align: center;
-            padding: 30px;
-            color: rgba(255, 255, 255, 0.6);
-            font-size: 1.1em;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 15px;
-            margin: 20px 0;
-            border: 2px dashed rgba(255, 255, 255, 0.2);
-        }
-
-        .lightbox {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.9);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .lightbox-content {
-            max-width: 90%;
-            max-height: 90%;
-            object-fit: contain;
-            border-radius: 10px;
-        }
-
-        .lightbox-close {
-            position: absolute;
-            top: 20px;
-            right: 30px;
-            color: white;
-            font-size: 40px;
-            cursor: pointer;
-            z-index: 1001;
-        }
-
-        .auto-reload {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            color: rgba(255, 255, 255, 0.9);
-            font-size: 0.9em;
-        }
-
-        .auto-reload input[type="checkbox"] {
-            transform: scale(1.2);
-        }
-
-        .refresh-indicator {
-            display: inline-block;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        @media (max-width: 768px) {
-            .media-grid {
-                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-            }
-
-            .header h1 {
-                font-size: 2em;
-            }
-
-            .container {
-                padding: 10px;
-            }
-        }
-    </style>
+    <title>Feed de Fotos - Diario Visual</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📸</text></svg>">
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>📸 Feed de Fotos</h1>
-            <div class="stats" id="stats">
-                Cargando estadísticas...
+    <!-- Navigation Header -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <span class="brand-icon">📸</span>
+                <span class="brand-text">Diario Visual</span>
             </div>
 
+            <div class="nav-menu">
+                <a href="index.html" class="nav-link active">
+                    <span class="nav-icon">🏠</span>
+                    Feed
+                </a>
+                <a href="dashboard.html" class="nav-link">
+                    <span class="nav-icon">📊</span>
+                    Dashboard
+                </a>
+                <button id="theme-toggle" class="theme-btn" title="Cambiar tema">
+                    <span class="theme-icon">🌙</span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Header with Stats -->
+        <div class="header-card">
+            <div class="header-content">
+                <h1>📸 Feed de Fotos</h1>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-number" id="total-photos">0</span>
+                        <span class="stat-label">Fotos totales</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-number" id="days-active">0</span>
+                        <span class="stat-label">Días activos</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-number" id="this-week">0</span>
+                        <span class="stat-label">Esta semana</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Feed Controls -->
+            <div class="feed-controls">
+                <button id="refresh-btn" class="control-btn" title="Actualizar feed">
+                    <span class="btn-icon">🔄</span>
+                    Actualizar
+                </button>
+                <button id="slideshow-btn" class="control-btn" title="Iniciar presentación">
+                    <span class="btn-icon">▶️</span>
+                    Slideshow
+                </button>
+                <div class="auto-refresh-control">
+                    <label class="switch">
+                        <input type="checkbox" id="auto-refresh" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span class="switch-label">Auto-refresh</span>
+                </div>
+            </div>
         </div>
 
-        <div id="loading" class="loading" style="display: none;">
-            Cargando fotos...
+        <!-- Loading Indicator -->
+        <div id="loading" class="loading-card" style="display: none;">
+            <div class="loading-content">
+                <div class="spinner"></div>
+                <span>Cargando fotos...</span>
+            </div>
         </div>
 
+        <!-- Feed Container -->
         <div class="feed-container" id="feedContainer">
             <div class="no-photos">
-                Cargando tu feed de fotos...
+                <div class="no-photos-icon">📷</div>
+                <h3>Cargando tu feed de fotos...</h3>
+                <p>Tus recuerdos aparecerán aquí</p>
             </div>
         </div>
 
+        <!-- Load More / End Indicators -->
         <div class="load-more-indicator" id="loadMoreIndicator" style="display: none;">
-            📸 Cargando más recuerdos...
+            <div class="indicator-content">
+                <span class="indicator-icon">📸</span>
+                <span>Cargando más recuerdos...</span>
+            </div>
         </div>
 
         <div class="end-of-feed" id="endOfFeed" style="display: none;">
-            🎉 ¡Has llegado al final! No hay más fotos que mostrar.
+            <div class="end-content">
+                <span class="end-icon">🎉</span>
+                <h3>¡Has llegado al final!</h3>
+                <p>No hay más fotos que mostrar</p>
+                <button onclick="scrollToTop()" class="scroll-top-btn">
+                    <span>⬆️</span> Ir al inicio
+                </button>
+            </div>
         </div>
     </div>
 
+    <!-- Lightbox -->
     <div class="lightbox" id="lightbox">
-        <span class="lightbox-close" onclick="closeLightbox()">&times;</span>
-        <img class="lightbox-content" id="lightboxContent">
+        <div class="lightbox-controls">
+            <button class="lightbox-btn" onclick="previousMedia()" title="Anterior">‹</button>
+            <button class="lightbox-btn" onclick="nextMedia()" title="Siguiente">›</button>
+            <button class="lightbox-btn" onclick="downloadMedia()" title="Descargar">⬇️</button>
+            <button class="lightbox-btn lightbox-close" onclick="closeLightbox()" title="Cerrar">×</button>
+        </div>
+        <div class="lightbox-content-wrapper">
+            <img class="lightbox-content" id="lightboxContent">
+            <video class="lightbox-content" id="lightboxVideo" controls style="display: none;">
+                <source id="lightboxVideoSource" type="video/mp4">
+            </video>
+        </div>
+        <div class="lightbox-info">
+            <span class="lightbox-date" id="lightboxDate"></span>
+            <span class="lightbox-time" id="lightboxTime"></span>
+        </div>
     </div>
 
-    <script>
-        // Configuración - La ruta se maneja automáticamente por el alias de Apache
-        const PHOTOS_BASE_PATH = '/photos'; // Ruta del alias configurado en Apache
-
-        // Estado de la aplicación
-        let allPhotoDates = [];
-        let loadedPhotos = {};
-        let isLoading = false;
-        let isRefreshing = false;
-        let totalPhotos = 0;
-        let lastRefreshTime = Date.now();
-        let scrollRefreshThreshold = 500; // Pixeles de scroll para activar refresh
-        let refreshCooldown = 5000; // 5 segundos entre refreshes automáticos
-
-        // Inicializar la aplicación
-        document.addEventListener('DOMContentLoaded', function() {
-            initializeFeed();
-            setupScrollRefresh();
-        });
-
-        async function initializeFeed() {
-            try {
-                await loadAvailableDates();
-                await loadAllPhotos(); // Cargar todas las fotos de una vez
-                updateStats();
-            } catch (error) {
-                console.error('Error inicializando feed:', error);
-                showError('Error al cargar el feed inicial');
-            }
-        }
-
-        async function loadAllPhotos() {
-            if (isLoading) return;
-
-            isLoading = true;
-            showLoading(true);
-
-            try {
-                const allPhotos = {};
-                let totalCount = 0;
-
-                console.log(`Cargando fotos para ${allPhotoDates.length} fechas...`);
-
-                // Cargar fotos de todas las fechas disponibles
-                for (const date of allPhotoDates) {
-                    const photos = await getPhotosForDate(date);
-                    if (photos.length > 0) {
-                        allPhotos[date] = photos;
-                        totalCount += photos.length;
-                    }
-                }
-
-                loadedPhotos = allPhotos;
-                displayFeed(loadedPhotos);
-
-                console.log(`Cargadas ${totalCount} fotos de ${Object.keys(allPhotos).length} días`);
-
-            } catch (error) {
-                console.error('Error cargando todas las fotos:', error);
-                showError('Error al cargar las fotos');
-            } finally {
-                isLoading = false;
-                showLoading(false);
-            }
-        }
-
-        function setupScrollRefresh() {
-            let lastScrollY = window.scrollY;
-            let scrollDistance = 0;
-
-            window.addEventListener('scroll', function() {
-                const currentScrollY = window.scrollY;
-                const deltaY = Math.abs(currentScrollY - lastScrollY);
-
-                // Acumular distancia de scroll
-                scrollDistance += deltaY;
-                lastScrollY = currentScrollY;
-
-                // Si ha scrolleado suficiente distancia, intentar refresh
-                if (scrollDistance >= scrollRefreshThreshold) {
-                    checkForRefresh();
-                    scrollDistance = 0; // Reset contador
-                }
-            });
-        }
-
-        async function checkForRefresh() {
-            const now = Date.now();
-
-            // Verificar cooldown para evitar refreshes muy frecuentes
-            if (now - lastRefreshTime < refreshCooldown) {
-                return;
-            }
-
-            if (isRefreshing || isLoading) {
-                return;
-            }
-
-            console.log('Trigger de scroll - Verificando nuevas fotos...');
-            lastRefreshTime = now;
-            await refreshPhotos();
-        }
-
-        async function refreshPhotos() {
-            if (isRefreshing || isLoading) return;
-
-            isRefreshing = true;
-            showRefreshIndicator(true);
-
-            try {
-                // Re-cargar fechas disponibles por si hay nuevas
-                await loadAvailableDates();
-
-                const newPhotos = {};
-                let foundNewPhotos = false;
-
-                // Verificar cada fecha para nuevas fotos
-                for (const date of allPhotoDates) {
-                    const currentPhotos = await getPhotosForDate(date);
-
-                    if (currentPhotos.length > 0) {
-                        // Comparar con fotos existentes
-                        const existingPhotos = loadedPhotos[date] || [];
-
-                        if (currentPhotos.length !== existingPhotos.length ||
-                            !arraysEqual(currentPhotos, existingPhotos)) {
-                            newPhotos[date] = currentPhotos;
-                            foundNewPhotos = true;
-                        }
-                    }
-                }
-
-                if (foundNewPhotos) {
-                    console.log('¡Nuevas fotos encontradas!', Object.keys(newPhotos));
-
-                    // Actualizar fotos cargadas
-                    Object.assign(loadedPhotos, newPhotos);
-
-                    // Re-mostrar todo el feed actualizado
-                    displayFeed(loadedPhotos);
-                    updateStats();
-
-                    // Mostrar notificación
-                    showNewPhotosNotification(Object.values(newPhotos).flat().length);
-                } else {
-                    console.log('No se encontraron fotos nuevas');
-                }
-
-            } catch (error) {
-                console.error('Error refrescando fotos:', error);
-            } finally {
-                isRefreshing = false;
-                showRefreshIndicator(false);
-            }
-        }
-
-        function arraysEqual(a, b) {
-            return a.length === b.length && a.every((val, index) => val === b[index]);
-        }
-
-        function showRefreshIndicator(show) {
-            const indicator = document.getElementById('loadMoreIndicator');
-            if (show) {
-                indicator.textContent = '🔄 Buscando nuevas fotos...';
-                indicator.style.display = 'block';
-            } else {
-                indicator.style.display = 'none';
-            }
-        }
-
-        function showNewPhotosNotification(count) {
-            const indicator = document.getElementById('loadMoreIndicator');
-            indicator.textContent = `✨ ¡${count} fotos nuevas añadidas!`;
-            indicator.style.display = 'block';
-            indicator.style.background = 'rgba(46, 204, 113, 0.3)';
-
-            // Ocultar después de 3 segundos
-            setTimeout(() => {
-                indicator.style.display = 'none';
-                indicator.style.background = 'rgba(255, 255, 255, 0.1)';
-            }, 3000);
-        }
-
-        async function loadAvailableDates() {
-            // Simular carga de fechas disponibles
-            // En tu implementación real, esto debería hacer una llamada a tu API
-            const dates = [];
-            const today = new Date();
-
-            // Generar fechas de los últimos 30 días para la demo
-            for (let i = 0; i < 30; i++) {
-                const date = new Date(today);
-                date.setDate(today.getDate() - i);
-                dates.push(formatDate(date));
-            }
-
-            allPhotoDates = dates;
-            console.log('Fechas disponibles:', allPhotoDates.length);
-        }
-
-        async function getPhotosForDate(dateStr) {
-            const [year, month, day] = dateStr.split('-');
-
-            try {
-                const response = await fetch(`/api/photos.php?year=${year}&month=${month}&day=${day}`);
-                if (!response.ok) {
-                    return [];
-                }
-                const data = await response.json();
-                return Array.isArray(data) ? data : [];
-            } catch (error) {
-                console.log(`No se encontraron fotos para ${dateStr}`);
-                // Simular algunas fotos para la demo - con cambios dinámicos
-                return generateMockPhotos(dateStr);
-            }
-        }
-
-        function generateMockPhotos(dateStr) {
-            // Función para simular fotos (eliminar en producción)
-            const mockPhotos = [
-                '10-30-45.jpg',
-                '14-15-20.jpg',
-                '18-45-30.mp4',
-                '20-12-15.jpg',
-                '09-15-30.jpg',
-                '16-20-45.jpg'
-            ];
-
-            // Simular cambios dinámicos basados en tiempo
-            const now = Date.now();
-            const daysSinceDate = Math.floor((now - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
-
-            // Días más recientes tienen más probabilidad de tener fotos nuevas
-            const probability = daysSinceDate < 3 ? 0.8 : (daysSinceDate < 7 ? 0.5 : 0.2);
-
-            if (Math.random() < probability) {
-                // Simular número variable de fotos que puede cambiar
-                const baseCount = Math.floor(Math.random() * 3) + 1;
-                const extraPhotos = Math.floor(now / 10000) % 2; // Cambios cada 10 segundos para demo
-                const totalPhotos = baseCount + extraPhotos;
-
-                return mockPhotos.slice(0, Math.min(totalPhotos, mockPhotos.length));
-            }
-            return [];
-        }
-
-        function displayFeed(photosByDate) {
-            const container = document.getElementById('feedContainer');
-
-            if (Object.keys(photosByDate).length === 0) {
-                container.innerHTML = '<div class="no-photos">No hay fotos disponibles en tu feed</div>';
-                return;
-            }
-
-            let html = '';
-
-            // Ordenar fechas de más reciente a más antigua
-            const sortedDates = Object.keys(photosByDate).sort((a, b) => b.localeCompare(a));
-
-            for (const date of sortedDates) {
-                const photos = photosByDate[date];
-                html += `
-                    <div class="diary-entry">
-                        <div class="entry-date">${formatDateSpanish(date)}</div>
-                        <div class="media-grid">
-                            ${photos.map(photo => createMediaItem(photo, date)).join('')}
-                        </div>
-                    </div>
-                `;
-            }
-
-            container.innerHTML = html;
-        }
-
-        function appendToFeed(newPhotosByDate) {
-            const container = document.getElementById('feedContainer');
-
-            if (Object.keys(newPhotosByDate).length === 0) {
-                return;
-            }
-
-            let html = '';
-            const sortedDates = Object.keys(newPhotosByDate).sort((a, b) => b.localeCompare(a));
-
-            for (const date of sortedDates) {
-                const photos = newPhotosByDate[date];
-                html += `
-                    <div class="diary-entry">
-                        <div class="entry-date">${formatDateSpanish(date)}</div>
-                        <div class="media-grid">
-                            ${photos.map(photo => createMediaItem(photo, date)).join('')}
-                        </div>
-                    </div>
-                `;
-            }
-
-            container.innerHTML += html;
-        }
-
-        function createMediaItem(filename, date) {
-            const [year, month, day] = date.split('-');
-            const filePath = `${PHOTOS_BASE_PATH}/${year}/${month}/${day}/${filename}`;
-            const isVideo = filename.toLowerCase().endsWith('.mp4');
-            const timestamp = extractTimestamp(filename);
-
-            if (isVideo) {
-                return `
-                    <div class="media-item">
-                        <video controls onclick="event.stopPropagation()">
-                            <source src="${filePath}" type="video/mp4">
-                            Tu navegador no soporta el elemento video.
-                        </video>
-                        <div class="media-timestamp">${timestamp}</div>
-                    </div>
-                `;
-            } else {
-                return `
-                    <div class="media-item" onclick="openLightbox('${filePath}')">
-                        <img src="${filePath}" alt="Foto del ${date}" loading="lazy">
-                        <div class="media-timestamp">${timestamp}</div>
-                    </div>
-                `;
-            }
-        }
-
-        function extractTimestamp(filename) {
-            const match = filename.match(/(\d{2})-(\d{2})-(\d{2})/);
-            if (match) {
-                const [, hours, minutes, seconds] = match;
-                return `${hours}:${minutes}:${seconds}`;
-            }
-            return filename;
-        }
-
-        function formatDate(date) {
-            return date.toISOString().split('T')[0];
-        }
-
-        function formatDateSpanish(dateStr) {
-            const date = new Date(dateStr + 'T00:00:00');
-            return date.toLocaleDateString('es-ES', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-            });
-        }
-
-        function updateStats() {
-            const stats = document.getElementById('stats');
-            totalPhotos = Object.values(loadedPhotos).reduce((sum, photos) => sum + photos.length, 0);
-            const daysWithPhotos = Object.keys(loadedPhotos).length;
-
-            const totalDays = allPhotoDates.length;
-            stats.textContent = `${totalPhotos} fotos en ${daysWithPhotos} días • Scroll para actualizar`;
-        }
-
-        function showLoading(show) {
-            const loading = document.getElementById('loading');
-            loading.style.display = show ? 'block' : 'none';
-        }
-
-        function showError(message) {
-            const container = document.getElementById('feedContainer');
-            container.innerHTML = `<div class="no-photos">❌ ${message}</div>`;
-        }
-
-        // Funciones del lightbox
-        function openLightbox(imageSrc) {
-            const lightbox = document.getElementById('lightbox');
-            const lightboxContent = document.getElementById('lightboxContent');
-
-            lightboxContent.src = imageSrc;
-            lightbox.style.display = 'flex';
-
-            document.addEventListener('keydown', handleLightboxKeydown);
-        }
-
-        function closeLightbox() {
-            document.getElementById('lightbox').style.display = 'none';
-            document.removeEventListener('keydown', handleLightboxKeydown);
-        }
-
-        function handleLightboxKeydown(e) {
-            if (e.key === 'Escape') {
-                closeLightbox();
-            }
-        }
-
-        // Cerrar lightbox al hacer clic fuera
-        document.getElementById('lightbox').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeLightbox();
-            }
-        });
-
-        // Limpiar al cerrar la página
-        window.addEventListener('beforeunload', function() {
-            // Limpiar cualquier timeout pendiente
-            console.log('Cerrando aplicación');
-        });
-    </script>
+    <!-- Slideshow Mode -->
+    <div class="slideshow-overlay" id="slideshowOverlay" style="display: none;">
+        <div class="slideshow-controls">
+            <button onclick="pauseSlideshow()" id="slideshow-pause" class="slideshow-btn">⏸️</button>
+            <button onclick="stopSlideshow()" class="slideshow-btn">⏹️</button>
+            <span class="slideshow-progress" id="slideshow-progress">1 / 10</span>
+        </div>
+        <div class="slideshow-content">
+            <img id="slideshow-image" class="slideshow-media">
+            <video id="slideshow-video" class="slideshow-media" style="display: none;" muted>
+                <source id="slideshow-video-source" type="video/mp4">
+            </video>
+        </div>
+        <div class="slideshow-info">
+            <h3 id="slideshow-date"></h3>
+            <p id="slideshow-time"></p>
+        </div>
+    </div>
+
+    <script src="feed.js"></script>
 </body>
 </html>
