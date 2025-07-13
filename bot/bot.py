@@ -943,8 +943,158 @@ async def start_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Mostrar estado después de generar
     await status_command(update, context)
 
-# Comando para mostrar información del sistema
-async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Comando de ayuda completo
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando para mostrar ayuda e información completa del bot"""
+    if update.effective_user.id != USER_ID:
+        await context.bot.send_message(chat_id=update.effective_user.id, text="❌ No tienes permisos para usar este bot.")
+        return
+
+    help_text = """
+🤖 **Bot de Diario Fotográfico**
+
+Este bot te ayuda a crear un diario visual automático enviándote notificaciones aleatorias durante el día para que captures momentos especiales.
+
+📋 **COMANDOS DISPONIBLES:**
+
+🏁 `/start` - Generar plan del día
+• Crea un horario aleatorio de 5-9 notificaciones
+• Solo se puede usar una vez por día
+• Programa notificaciones automáticas
+
+📊 `/status` - Ver estado de notificaciones
+• Muestra todas las notificaciones del día
+• Estado: PROGRAMADO, PENDIENTE, ENTREGADO, PERDIDO
+• Progreso actual y próxima notificación
+
+🔍 `/debug` - Debug de ventanas de tiempo
+• Información técnica de ventanas activas
+• Útil para resolver problemas
+• Muestra ventana actual y disponible
+
+🔧 `/permisos` - Verificar permisos de archivos
+• Estado de permisos del directorio
+• Configuración de umask
+• Archivos recientes y sus permisos
+
+ℹ️ `/info` - Información del sistema
+• Estado de dependencias (PIL, OpenCV)
+• Configuración de límites
+• Rutas y configuración actual
+
+⚙️ `/scheduler` - Debug del programador
+• Jobs programados en el scheduler
+• Próximas ejecuciones
+• Estado interno del programador
+
+❓ `/help` - Mostrar esta ayuda
+
+📏 **REQUISITOS DE CONTENIDO:**
+
+📸 **Para FOTOS:**
+• Resolución mínima: 1080p (1920x1080)
+• Tamaño máximo: 20MB
+• Formatos: JPG, PNG, HEIC, HEIF
+• Usa la máxima calidad de tu cámara
+
+🎥 **Para VIDEOS:**
+• Duración máxima: 20 segundos
+• Tamaño máximo: 20MB
+• Formatos: MP4, MOV, HEVC
+• Graba en la mejor calidad disponible
+
+⏰ **SISTEMA DE VENTANAS:**
+
+• Cada notificación abre una "ventana de tiempo"
+• La ventana permanece abierta hasta la siguiente notificación
+• Solo puedes enviar UNA foto/video por ventana
+• Si pierdes una ventana, se cierra automáticamente
+
+**Ejemplo:**
+```
+08:00 - 📸 Notificación de FOTO
+│
+├─ 08:00-10:30: Puedes enviar la foto
+│
+10:30 - 🎥 Notificación de VIDEO
+│
+├─ 10:30-14:15: Puedes enviar el video
+│
+14:15 - 📸 Notificación de FOTO
+│
+└─ 14:15-23:59: Puedes enviar la foto
+```
+
+🔄 **RECUPERACIÓN AUTOMÁTICA:**
+
+Si el bot se reinicia y hay notificaciones perdidas que aún están en ventana activa, se reenviarán automáticamente.
+
+🌐 **INTERFAZ WEB:**
+
+Accede a tu feed visual en: `http://localhost:8090`
+• Ve todas tus fotos organizadas por fecha
+• Actualización automática cada minuto
+• Lightbox para ver imágenes en grande
+• Reproducción de videos integrada
+
+🎯 **CONSEJOS DE USO:**
+
+1. **Usa /start** solo una vez al día
+2. **Responde rápido** a las notificaciones
+3. **Revisa /status** para ver tu progreso
+4. **Configura tu cámara** en máxima calidad
+5. **Mantén el bot activo** para no perder notificaciones
+
+💡 **¿Problemas?**
+
+• `/debug` para ver ventanas activas
+• `/permisos` para problemas de archivos
+• `/info` para verificar configuración
+• Revisa que tu contenido cumpla los requisitos
+
+¡Disfruta capturando tu día! 📸✨
+"""
+
+    await context.bot.send_message(chat_id=USER_ID, text=help_text, parse_mode='Markdown')
+
+    # Mostrar estado actual después de la ayuda
+    plan = load_plan_json()
+    if plan:
+        status_summary = f"\n📈 **Estado actual:** "
+        delivered_count = sum(1 for entry in plan if entry.get("delivered", False))
+        total_count = len(plan)
+        status_summary += f"{delivered_count}/{total_count} completadas"
+
+        # Próxima notificación
+        now = datetime.now()
+        current_total_minutes = now.hour * 60 + now.minute
+        next_notification = None
+
+        for entry in plan:
+            notification_hour = entry.get("hour", 8)
+            notification_minute = entry.get("minute", 0)
+            notification_total_minutes = notification_hour * 60 + notification_minute
+
+            if notification_total_minutes > current_total_minutes and not entry.get("delivered", False):
+                next_notification = format_notification_time(notification_hour, notification_minute)
+                next_type = entry.get("type", "foto")
+                status_summary += f"\n🔔 **Próxima:** {next_notification} ({next_type.upper()})"
+                break
+
+        if not next_notification and delivered_count < total_count:
+            # Hay pendientes pero en ventana activa
+            window_index, current_window = get_current_time_window(plan)
+            if current_window and not current_window.get("delivered", False):
+                current_type = current_window.get("type", "foto")
+                status_summary += f"\n🔔 **AHORA:** Puedes enviar {current_type.upper()}"
+
+        await context.bot.send_message(chat_id=USER_ID, text=status_summary, parse_mode='Markdown')
+    else:
+        await context.bot.send_message(
+            chat_id=USER_ID,
+            text="💡 **Sugerencia:** Usa `/start` para comenzar tu diario fotográfico de hoy.",
+            parse_mode='Markdown'
+        )
     if update.effective_user.id != USER_ID:
         await context.bot.send_message(chat_id=update.effective_user.id, text="❌ No tienes permisos para usar este bot.")
         return
@@ -1238,6 +1388,10 @@ async def main():
         app.add_handler(CommandHandler("debug", debug_command))
         app.add_handler(CommandHandler("scheduler", scheduler_debug_command))
         app.add_handler(CommandHandler("permisos", permissions_command))
+        app.add_handler(CommandHandler("help", help_command))
+
+        # También agregar "ayuda" como alias en español
+        app.add_handler(CommandHandler("ayuda", help_command))
 
         # Handler para mensajes (debe ir después de los comandos)
         app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.TEXT, photo_handler))
