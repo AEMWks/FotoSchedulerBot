@@ -1,0 +1,45 @@
+# bot-project/docker-compose.yml - Solo Bot de Telegram para Container Manager
+version: '3.8'
+
+services:
+  photo-bot:
+    build:
+      context: ../shared/bot
+      dockerfile: Dockerfile
+    container_name: ${CONTAINER_NAME:-photo-diary-bot}
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_USER_ID: ${TELEGRAM_USER_ID}
+      TZ: ${TZ:-Europe/Madrid}
+      UMASK: "002"
+    volumes:
+      - ${HOST_DATA_PATH}:${DATA_PATH:-/data/fotos}
+    restart: unless-stopped
+
+    # Optimización para NAS Synology
+    deploy:
+      resources:
+        limits:
+          memory: ${BOT_MEMORY_LIMIT:-256M}
+          cpus: '${BOT_CPU_LIMIT:-0.5}'
+        reservations:
+          memory: 128M
+          cpus: '0.2'
+
+    # Logging optimizado para NAS
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "${LOG_MAX_SIZE:-10m}"
+        max-file: "${LOG_MAX_FILE:-3}"
+
+    # Red simple para Container Manager
+    network_mode: bridge
+
+    # Health check para Container Manager UI
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

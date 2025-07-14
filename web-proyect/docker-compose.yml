@@ -1,0 +1,50 @@
+# web-project/docker-compose.yml - Solo Interfaz Web para Container Manager
+version: '3.8'
+
+services:
+  photo-web:
+    build:
+      context: ../shared/web
+      dockerfile: Dockerfile
+    container_name: ${WEB_CONTAINER_NAME:-photo-diary-web}
+    ports:
+      - "${WEB_PORT:-8090}:80"
+    environment:
+      TZ: ${TZ:-Europe/Madrid}
+      PHOTOS_PATH: ${DATA_PATH:-/data/fotos}
+      APACHE_RUN_USER: "#33"
+      APACHE_RUN_GROUP: "#33"
+      PHP_MEMORY_LIMIT: ${PHP_MEMORY_LIMIT:-128M}
+      PHP_MAX_UPLOAD_SIZE: ${PHP_MAX_UPLOAD_SIZE:-20M}
+      PHP_MAX_POST_SIZE: ${PHP_MAX_POST_SIZE:-20M}
+    volumes:
+      - ${HOST_DATA_PATH}:${DATA_PATH:-/data/fotos}:${PHOTOS_MOUNT_MODE:-ro}
+    restart: unless-stopped
+
+    # Optimización para NAS Synology
+    deploy:
+      resources:
+        limits:
+          memory: ${WEB_MEMORY_LIMIT:-512M}
+          cpus: '${WEB_CPU_LIMIT:-1.0}'
+        reservations:
+          memory: 256M
+          cpus: '0.3'
+
+    # Logging optimizado para NAS
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "${LOG_MAX_SIZE:-10m}"
+        max-file: "${LOG_MAX_FILE:-3}"
+
+    # Red simple para Container Manager
+    network_mode: bridge
+
+    # Health check para Container Manager UI
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/", "||", "exit", "1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
