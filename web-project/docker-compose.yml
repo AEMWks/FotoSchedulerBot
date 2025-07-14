@@ -1,0 +1,39 @@
+# web-project/docker-compose.yml - CORREGIDO para Synology NAS
+services:
+  photo-web:
+    build:
+      context: ../shared/web
+      dockerfile: Dockerfile
+    container_name: ${WEB_CONTAINER_NAME:-photo-diary-web}
+    ports:
+      - "${WEB_PORT:-8090}:80"
+    environment:
+      TZ: ${TZ:-Europe/Madrid}
+      PHOTOS_PATH: ${DATA_PATH:-/data/fotos}
+      PHP_MEMORY_LIMIT: ${PHP_MEMORY_LIMIT:-128M}
+      PHP_MAX_UPLOAD_SIZE: ${PHP_MAX_UPLOAD_SIZE:-20M}
+      PHP_MAX_POST_SIZE: ${PHP_MAX_POST_SIZE:-20M}
+    volumes:
+      - ${HOST_DATA_PATH}:${DATA_PATH:-/data/fotos}:${PHOTOS_MOUNT_MODE:-ro}
+    restart: unless-stopped
+
+    # ELIMINADO: deploy/resources (causa el error en Synology NAS)
+    # Los NAS Synology no soportan cgroup scheduler
+
+    # Logging optimizado para NAS (esto sí funciona)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "${LOG_MAX_SIZE:-10m}"
+        max-file: "${LOG_MAX_FILE:-3}"
+
+    # Red simple para Container Manager
+    network_mode: bridge
+
+    # Health check simplificado para Container Manager
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

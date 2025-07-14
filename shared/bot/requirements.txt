@@ -1,0 +1,29 @@
+# requirements.txt - Dependencias optimizadas para NAS
+
+# Bot de Telegram (versión estable)
+python-telegram-bot==20.8
+
+# Programador de tareas
+APScheduler==3.10.4
+
+# Procesamiento de imágenes ligero
+Pillow==10.1.0
+
+# NumPy optimizado (compatible con OpenCV)
+numpy==1.24.4
+
+# OpenCV sin GUI (90% menos tamaño que opencv-python)
+opencv-python-headless==4.8.1.78
+
+# Nota: Se eliminaron dependencias innecesarias para reducir:
+# - Tiempo de build
+# - Uso de RAM
+# - Tamaño de imagen
+# - Tiempo de inicio
+
+# Dependencias eliminadas por optimización:
+# - opencv-python (reemplazado por headless)
+# - matplotlib (no se usaba)
+# - requests (incluido en python-telegram-bot)
+# - datetime (built-in Python)
+# - os, sys, json (built-in Python)

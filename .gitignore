@@ -1,6 +1,3 @@
-# Variables de entorno locales con datos sensibles
-.env
-
 # Archivos de Python
 __pycache__/
 *.py[cod]
