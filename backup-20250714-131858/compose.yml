@@ -1,0 +1,40 @@
+services:
+  nas-photo-bot:
+    build: ./bot
+    container_name: ${CONTAINER_NAME:-nas-photo-bot}
+    env_file:
+      - .env
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_USER_ID: ${TELEGRAM_USER_ID}
+      TZ: Europe/Madrid
+      UMASK: "002"
+    volumes:
+      - ${HOST_DATA_PATH}:${DATA_PATH:-/data/fotos}
+    restart: unless-stopped
+    networks:
+      - photo-network
+
+  photo-diary-web:
+    build: ./web
+    container_name: ${WEB_CONTAINER_NAME:-photo-diary-web}
+    ports:
+      - "${WEB_PORT:-8090}:80"
+    environment:
+      TZ: Europe/Madrid
+      PHOTOS_PATH: ${DATA_PATH:-/data/fotos}
+      # Asegurar que Apache tenga los permisos correctos
+      APACHE_RUN_USER: "#33"
+      APACHE_RUN_GROUP: "#33"
+    volumes:
+      - ${HOST_DATA_PATH}:${DATA_PATH:-/data/fotos}:Z  # Lectura/escritura con contexto SELinux
+    restart: unless-stopped
+    networks:
+      - photo-network
+    depends_on:
+      - nas-photo-bot
+
+networks:
+  photo-network:
+    driver: bridge
+    name: photo-network

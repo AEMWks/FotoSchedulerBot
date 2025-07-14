@@ -1,7 +1,7 @@
 #!/bin/bash
 # fix-permissions.sh - Script para corregir permisos de fotos
 
-PHOTOS_DIR="/data/fotos"
+PHOTOS_DIR="/volume1/homes/aespada/FotoSchedulerBot"
 WEB_USER="33"    # UID de www-data
 WEB_GROUP="33"   # GID de www-data
 

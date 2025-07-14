@@ -1,0 +1,39 @@
+# docker-compose.web.yml - Solo la interfaz web
+version: '3.8'
+
+services:
+  photo-diary-web:
+    build: ./web
+    container_name: ${WEB_CONTAINER_NAME:-photo-diary-web}
+    ports:
+      - "${WEB_PORT:-8090}:80"
+    environment:
+      TZ: ${TZ:-Europe/Madrid}
+      PHOTOS_PATH: ${DATA_PATH:-/data/fotos}
+      # Configuración optimizada para Apache en NAS
+      APACHE_RUN_USER: "#33"
+      APACHE_RUN_GROUP: "#33"
+      # Limitar uso de memoria de PHP
+      PHP_MEMORY_LIMIT: 128M
+      PHP_MAX_UPLOAD_SIZE: 20M
+      PHP_MAX_POST_SIZE: 20M
+    volumes:
+      - ${HOST_DATA_PATH}:${DATA_PATH:-/data/fotos}:ro  # Solo lectura para la web
+    restart: unless-stopped
+    # Configuración optimizada para NAS con poca RAM
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.3'
+    # Configuración de logging para reducir I/O
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # No crear red si no es necesario (usa red por defecto)
+    network_mode: bridge
