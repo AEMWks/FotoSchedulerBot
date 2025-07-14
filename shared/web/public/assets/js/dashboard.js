@@ -610,10 +610,8 @@ class PhotoDashboard {
 
     resultsGrid.innerHTML = this.state.searchResults
       .map(
-        (result) => `
-            <div class="result-item" onclick="openLightbox('${result.path}', '${
-          result.date
-        }', '${result.timestamp}')">
+        (result, idx) => `
+            <div class="result-item" data-date="${result.date || ''}" onclick="openLightbox('${result.path}', '${result.date}', '${result.timestamp}')">
                 ${
                   result.type === "video"
                     ? `<video muted><source src="${result.path}" type="video/mp4"></video>`
@@ -624,11 +622,22 @@ class PhotoDashboard {
                       result.date
                     )}</div>
                     <div class="result-item-time">${result.timestamp}</div>
+                    <div class="comment-box-container" id="comment-box-${idx}" data-date="${result.date}"></div>
                 </div>
             </div>
         `
       )
       .join("");
+
+    // Instanciar CommentBox para cada resultado con fecha
+    this.state.searchResults.forEach((result, idx) => {
+      if (result.date && window.CommentBox) {
+        const commentContainer = document.getElementById(`comment-box-${idx}`);
+        if (commentContainer) {
+          new window.CommentBox(commentContainer, result.date);
+        }
+      }
+    });
   }
 
   displayRandomMemory(memory) {
