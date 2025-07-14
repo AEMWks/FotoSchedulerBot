@@ -29,7 +29,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/cache/apt/*
 
 # Crear usuario no-root para seguridad (UID 33 = www-data)
-RUN groupadd -g 33 appuser && useradd -r -u 33 -g appuser appuser
+RUN groupadd -g 33 appuser 2>/dev/null || true && \
+    useradd -r -u 33 -g 33 appuser 2>/dev/null || true
 
 # Configurar directorio de trabajo
 WORKDIR /app
@@ -67,7 +68,7 @@ USER appuser
 
 # Health check optimizado para Container Manager
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
-    CMD python -c "import sys; sys.exit(0)" || exit 1
+    CMD python -c "import os; exit(0 if os.path.exists('/tmp/bot_running') else 1)"
 
 # Comando optimizado
 CMD ["python", "-u", "bot.py"]
