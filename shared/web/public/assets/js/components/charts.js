@@ -440,13 +440,11 @@ class ActivityChart extends BaseChart {
 /**
  * Gráfico de barras para distribución por horas
  */
-class HourlyChart extends BaseChart {
+class HourlyChart {
     constructor(containerId, options = {}) {
-        // Este chart no usa canvas, usa divs para mejor interacción
         this.containerId = containerId;
         this.container = document.getElementById(containerId);
         this.data = Array(24).fill(0);
-
         this.options = {
             maxHeight: 60,
             showLabels: true,

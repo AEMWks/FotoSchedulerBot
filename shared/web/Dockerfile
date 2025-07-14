@@ -133,5 +133,9 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
 # Puerto estándar
 EXPOSE 80
 
+# Dar permisos de escritura al directorio API
+RUN chown -R www-data:www-data /var/www/html/api && \
+    chmod -R 755 /var/www/html/api
+
 # Comando de inicio
 CMD ["/entrypoint.sh"]
