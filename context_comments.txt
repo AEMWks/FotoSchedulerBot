@@ -1,0 +1,122 @@
+## Contexto del Proyecto - Sistema de Comentarios para Diario Visual
+
+### **Descripción del Proyecto Base**
+Sistema de diario visual con bot de Telegram y interfaz web que organiza fotos/videos por fecha. Estructura:
+- **Bot**: Python + Telegram, guarda fotos en `/data/fotos/YYYY/MM/DD/HH-MM-SS.ext`
+- **Web**: PHP + Apache, interfaz de visualización con feed y dashboard
+- **Arquitectura**: Docker containers en Synology NAS
+
+### **Objetivo Actual**
+Implementar sistema de comentarios por día en las tarjetas del feed, permitiendo agregar notas personales a cada fecha.
+
+### **Plan de Implementación Acordado**
+
+#### 1. **Modelo de Datos**
+- **Ubicación**: `shared/web/api/utils/CommentsManager.php` (nuevo)
+- **Almacenamiento**: JSON por fecha en `/data/fotos/comments/YYYY-MM-DD.json`
+- **Estructura**:
+```json
+{
+  "date": "2024-01-15",
+  "comment": "Día increíble en la playa",
+  "created_at": "2024-01-15T20:30:00",
+  "updated_at": "2024-01-15T20:30:00"
+}
+```
+
+#### 2. **Backend APIs**
+- `GET /api/comments/{date}` - Obtener comentario
+- `POST /api/comments/{date}` - Crear/actualizar
+- `DELETE /api/comments/{date}` - Eliminar
+
+#### 3. **Frontend**
+- Modificar `feed.js` para cargar/mostrar comentarios
+- Agregar icono 💬 en tarjetas del feed
+- Modal inline para edición
+- Integración con dashboard
+
+#### 4. **Componentes**
+- `assets/js/components/comments.js` - Lógica de comentarios
+- Estilos en CSS existente
+- Auto-guardado y indicadores visuales
+
+### **Estado Actual**
+- ✅ Plan definido y aprobado
+- 🔄 Pendiente: Comenzar implementación
+
+### **Archivos Clave a Modificar**
+- `shared/web/api/utils/CommentsManager.php` (nuevo)
+- `shared/web/api/routes/comments.php` (nuevo)
+- `shared/web/api/index.php` (agregar rutas)
+- `shared/web/public/assets/js/feed.js`
+- `shared/web/public/assets/js/components/comments.js` (nuevo)
+- `shared/web/public/assets/css/styles.css`
+
+---
+
+**Instrucción para continuar**: "Continúa implementando el sistema de comentarios según el plan definido, empezando por [componente específico]"
+
+✅ Completado: CommentsManager.php
+Lo que se ha implementado:
+
+Clase completa con todos los métodos principales:
+
+✅ getComment($date) - Leer comentario
+✅ saveComment($date, $comment) - Guardar/actualizar
+✅ deleteComment($date) - Eliminar
+✅ getCommentsInRange($startDate, $endDate) - Comentarios en rango
+✅ getCommentsStats() - Estadísticas de comentarios
+
+
+Características implementadas:
+
+✅ Almacenamiento en JSON por fecha
+✅ Creación automática del directorio /data/fotos/comments/
+✅ Validación de fechas formato YYYY-MM-DD
+✅ Sanitización de comentarios (límite 5000 chars)
+✅ Configuración correcta de permisos (664/775)
+✅ Manejo de errores y logging
+✅ Escritura atómica de archivos
+✅ Health check del sistema
+
+
+Integración con el sistema:
+
+✅ Usa configuración existente (zona horaria, permisos)
+✅ Compatible con NAS Synology
+✅ Logging consistente con el resto del proyecto
+
+---
+
+✅ Completado: API Routes para Comentarios
+Lo que se ha implementado:
+
+Endpoints REST completos:
+
+✅ GET /api/comments/{date} - Obtener comentario específico
+✅ POST /api/comments/{date} - Crear/actualizar comentario
+✅ DELETE /api/comments/{date} - Eliminar comentario
+✅ GET /api/comments/range/{start_date}/{end_date} - Comentarios en rango
+✅ GET /api/comments/stats - Estadísticas de comentarios
+✅ GET /api/comments/health - Health check del sistema
+
+
+Características implementadas:
+
+✅ Manejo completo de CORS y preflight
+✅ Validación de parámetros y fechas
+✅ Respuestas JSON estandarizadas con ResponseHelper
+✅ Códigos HTTP apropiados (200, 201, 400, 404, 500)
+✅ Manejo de errores robusto
+✅ Logging de requests con el sistema existente
+✅ Documentación incluida con ejemplos de uso
+
+
+Funcionalidades adicionales:
+
+✅ Auto-documentación en /api/comments
+✅ Ejemplos de uso accesibles vía API
+✅ Diferenciación entre creación (201) y actualización (200)
+✅ Integración completa con CommentsManager
+
+---
