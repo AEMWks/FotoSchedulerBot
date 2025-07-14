@@ -1,15 +1,18 @@
-# shared/web/Dockerfile - Web optimizada para Synology NAS
+# shared/web/Dockerfile - Web ESPECÍFICO para Synology NAS
 FROM php:8.1-apache-bullseye
 
-# Variables de optimización
+# Variables de entorno para NAS
 ENV DEBIAN_FRONTEND=noninteractive \
     APACHE_RUN_USER=www-data \
     APACHE_RUN_GROUP=www-data \
     APACHE_LOG_DIR=/var/log/apache2 \
     APACHE_LOCK_DIR=/var/lock/apache2 \
-    APACHE_PID_FILE=/var/run/apache2/apache2.pid
+    APACHE_PID_FILE=/var/run/apache2/apache2.pid \
+    # Variables para compatibilidad NAS
+    PUID=33 \
+    PGID=33
 
-# Instalar extensiones PHP mínimas necesarias
+# Instalar extensiones PHP necesarias
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Dependencias para procesamiento de imágenes
     libzip-dev \
@@ -20,30 +23,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zip \
     unzip \
     curl \
+    ca-certificates \
     && docker-php-ext-configure gd --with-jpeg --with-webp \
     && docker-php-ext-install -j$(nproc) \
         zip \
         gd \
         exif \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /var/cache/apt/*
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /tmp/*
 
-# Habilitar módulos Apache necesarios
+# Habilitar módulos Apache
 RUN a2enmod rewrite headers expires deflate
 
-# Configuración optimizada de Apache para NAS (poca RAM)
-RUN echo "# Configuración optimizada para NAS Synology" >> /etc/apache2/apache2.conf \
+# Configuración Apache optimizada para NAS (recursos limitados)
+RUN echo "# Configuración Apache para NAS Synology" >> /etc/apache2/apache2.conf \
     && echo "ServerLimit 2" >> /etc/apache2/apache2.conf \
     && echo "MaxRequestWorkers 8" >> /etc/apache2/apache2.conf \
     && echo "ThreadsPerChild 4" >> /etc/apache2/apache2.conf \
     && echo "StartServers 1" >> /etc/apache2/apache2.conf \
     && echo "MinSpareThreads 2" >> /etc/apache2/apache2.conf \
     && echo "MaxSpareThreads 4" >> /etc/apache2/apache2.conf \
-    && echo "KeepAlive Off" >> /etc/apache2/apache2.conf
+    && echo "KeepAlive Off" >> /etc/apache2/apache2.conf \
+    && echo "ServerTokens Prod" >> /etc/apache2/apache2.conf \
+    && echo "ServerSignature Off" >> /etc/apache2/apache2.conf
 
-# Configurar PHP optimizado para NAS
-RUN echo "# Configuración PHP optimizada para NAS" > /usr/local/etc/php/conf.d/99-nas-optimization.ini \
+# Configuración PHP para NAS
+RUN echo "# PHP optimizado para NAS" > /usr/local/etc/php/conf.d/99-nas-optimization.ini \
     && echo "memory_limit = 128M" >> /usr/local/etc/php/conf.d/99-nas-optimization.ini \
     && echo "upload_max_filesize = 20M" >> /usr/local/etc/php/conf.d/99-nas-optimization.ini \
     && echo "post_max_size = 20M" >> /usr/local/etc/php/conf.d/99-nas-optimization.ini \
@@ -53,36 +58,67 @@ RUN echo "# Configuración PHP optimizada para NAS" > /usr/local/etc/php/conf.d/
     && echo "opcache.enable = 1" >> /usr/local/etc/php/conf.d/99-nas-optimization.ini \
     && echo "opcache.memory_consumption = 32" >> /usr/local/etc/php/conf.d/99-nas-optimization.ini \
     && echo "opcache.max_accelerated_files = 2000" >> /usr/local/etc/php/conf.d/99-nas-optimization.ini \
-    && echo "opcache.validate_timestamps = 0" >> /usr/local/etc/php/conf.d/99-nas-optimization.ini
+    && echo "opcache.validate_timestamps = 0" >> /usr/local/etc/php/conf.d/99-nas-optimization.ini \
+    && echo "log_errors = On" >> /usr/local/etc/php/conf.d/99-nas-optimization.ini \
+    && echo "error_log = /var/log/apache2/php_errors.log" >> /usr/local/etc/php/conf.d/99-nas-optimization.ini
 
-# Configuración optimizada de Apache VirtualHost
-COPY apache-config.conf /etc/apache2/sites-available/000-default.conf
+# Configuración VirtualHost básica para NAS
+RUN echo '<VirtualHost *:80>' > /etc/apache2/sites-available/000-default.conf \
+    && echo '    ServerAdmin admin@localhost' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '    DocumentRoot /var/www/html' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '    DirectoryIndex index.html index.php' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '    ErrorLog ${APACHE_LOG_DIR}/error.log' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '    CustomLog ${APACHE_LOG_DIR}/access.log combined' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '    <Directory /var/www/html>' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '        Options -Indexes +FollowSymLinks' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '        AllowOverride All' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '        Require all granted' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '    </Directory>' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '</VirtualHost>' >> /etc/apache2/sites-available/000-default.conf
 
-# Copiar archivos de la aplicación web
+# Copiar archivos de la aplicación
 COPY public/ /var/www/html/
-COPY .htaccess /var/www/html/
 COPY api/ /var/www/html/api/
 
-# Crear directorio de datos y establecer permisos
-RUN mkdir -p /data/fotos /var/run/apache2 /var/lock/apache2 /var/log/apache2 \
-    && chown -R www-data:www-data /var/www/html /data/fotos /var/run/apache2 /var/lock/apache2 /var/log/apache2 \
-    && chmod -R 755 /var/www/html \
-    && chmod -R 775 /data/fotos
+# Crear .htaccess básico si no existe
+RUN echo 'RewriteEngine On' > /var/www/html/.htaccess \
+    && echo 'RewriteCond %{REQUEST_FILENAME} !-f' >> /var/www/html/.htaccess \
+    && echo 'RewriteCond %{REQUEST_FILENAME} !-d' >> /var/www/html/.htaccess \
+    && echo 'RewriteRule ^api/(.*)$ api/index.php?route=$1 [QSA,L]' >> /var/www/html/.htaccess
 
-# Script de inicio optimizado
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh \
-    && chown root:root /entrypoint.sh
+# CRÍTICO para NAS: Crear directorios básicos sin intentar cambiar ownership
+RUN mkdir -p /var/run/apache2 /var/lock/apache2 /var/log/apache2
+
+# Script de entrada compatible con NAS
+RUN echo '#!/bin/bash' > /entrypoint.sh \
+    && echo 'set -e' >> /entrypoint.sh \
+    && echo 'echo "=== Web server iniciando en NAS Synology ==="' >> /entrypoint.sh \
+    && echo 'echo "Usuario actual: $(whoami) ($(id))"' >> /entrypoint.sh \
+    && echo 'echo "Directorio web: /var/www/html"' >> /entrypoint.sh \
+    && echo 'echo "Directorio fotos: ${PHOTOS_PATH:-/data/fotos}"' >> /entrypoint.sh \
+    && echo '# Verificar montaje sin intentar modificarlo' >> /entrypoint.sh \
+    && echo 'if [ -d "${PHOTOS_PATH:-/data/fotos}" ]; then' >> /entrypoint.sh \
+    && echo '    echo "✅ Directorio de fotos montado correctamente"' >> /entrypoint.sh \
+    && echo '    ls -la "${PHOTOS_PATH:-/data/fotos}" | head -3' >> /entrypoint.sh \
+    && echo 'else' >> /entrypoint.sh \
+    && echo '    echo "⚠️  Directorio de fotos no encontrado: ${PHOTOS_PATH:-/data/fotos}"' >> /entrypoint.sh \
+    && echo 'fi' >> /entrypoint.sh \
+    && echo '# Verificar archivos web' >> /entrypoint.sh \
+    && echo 'echo "Archivos web disponibles:"' >> /entrypoint.sh \
+    && echo 'ls -la /var/www/html/ | head -5' >> /entrypoint.sh \
+    && echo 'echo "=== Iniciando Apache ==="' >> /entrypoint.sh \
+    && echo 'exec apache2-foreground' >> /entrypoint.sh \
+    && chmod +x /entrypoint.sh
 
 # Health check para Container Manager
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -f http://localhost/ || exit 1
 
-# Exponer puerto
+# Puerto estándar
 EXPOSE 80
 
-# Usuario por defecto
-USER www-data
+# IMPORTANTE: NO especificar USER en NAS
+# Container Manager maneja los permisos automáticamente
 
 # Comando de inicio
 CMD ["/entrypoint.sh"]
