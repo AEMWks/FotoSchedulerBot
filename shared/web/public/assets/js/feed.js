@@ -27,6 +27,14 @@ class PhotoFeed {
       currentMedia: [],
     };
 
+    // Comentarios
+    this.comments = {
+      cache: new Map(), // Cache de comentarios cargados
+      currentDate: null, // Fecha del comentario actual en edición
+      isEditing: false, // Estado de edición
+      autoSaveTimeout: null, // Para auto-guardado
+    };
+
     this.init();
   }
 
@@ -101,6 +109,38 @@ class PhotoFeed {
       } else if (e.key === " " && this.slideshow.active) {
         e.preventDefault();
         this.pauseSlideshow();
+      }
+    });
+
+    // Comentarios - delegación de eventos
+    document.addEventListener("click", (e) => {
+      // Click en icono de comentario
+      if (e.target.closest(".comment-icon")) {
+        const commentIcon = e.target.closest(".comment-icon");
+        const date = commentIcon.dataset.date;
+        this.showCommentModal(date);
+      }
+
+      // Click en botón guardar comentario
+      if (e.target.id === "save-comment-btn") {
+        this.saveCurrentComment();
+      }
+
+      // Click en botón eliminar comentario
+      if (e.target.id === "delete-comment-btn") {
+        this.deleteCurrentComment();
+      }
+
+      // Click en botón cancelar comentario
+      if (e.target.id === "cancel-comment-btn") {
+        this.hideCommentModal();
+      }
+    });
+
+    // Auto-guardado mientras escribe
+    document.addEventListener("input", (e) => {
+      if (e.target.id === "comment-textarea") {
+        this.scheduleAutoSave();
       }
     });
   }
@@ -250,6 +290,7 @@ class PhotoFeed {
     }
 
     container.innerHTML = html;
+    this.loadCommentsForDisplayedDates(sortedDates);
     this.prepareMediaForSlideshow();
   }
 
@@ -270,6 +311,10 @@ class PhotoFeed {
                     : `<img src="${filePath}" alt="Foto del ${date}" loading="lazy">`
                 }
                 <div class="media-timestamp">${timestamp}</div>
+                <div class="comment-icon" data-date="${date}" title="Agregar comentario">
+                    💬
+                    <span class="comment-indicator" style="display: none;">📝</span>
+                </div>
             </div>
         `;
 
@@ -587,6 +632,308 @@ class PhotoFeed {
     // Pause any playing video
     const slideshowVideo = document.getElementById("slideshow-video");
     slideshowVideo.pause();
+  }
+
+  // Métodos de comentarios
+  async loadCommentForDate(date) {
+    // Verificar cache primero
+    if (this.comments.cache.has(date)) {
+      return this.comments.cache.get(date);
+    }
+
+    try {
+      const response = await fetch(`/api/comments/${date}`);
+      if (response.ok) {
+        const data = await response.json();
+        const comment = data.success ? data.data?.comment || "" : "";
+        this.comments.cache.set(date, comment);
+        return comment;
+      }
+    } catch (error) {
+      console.log(`No hay comentario para ${date}`);
+    }
+
+    this.comments.cache.set(date, "");
+    return "";
+  }
+
+  async saveComment(date, comment) {
+    try {
+      const response = await fetch(`/api/comments/${date}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ comment: comment.trim() }),
+      });
+
+      if (response.ok) {
+        this.comments.cache.set(date, comment.trim());
+        this.updateCommentIndicator(date, comment.trim());
+        return true;
+      }
+    } catch (error) {
+      console.error("Error guardando comentario:", error);
+    }
+    return false;
+  }
+
+  async deleteComment(date) {
+    try {
+      const response = await fetch(`/api/comments/${date}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        this.comments.cache.set(date, "");
+        this.updateCommentIndicator(date, "");
+        return true;
+      }
+    } catch (error) {
+      console.error("Error eliminando comentario:", error);
+    }
+    return false;
+  }
+
+  showCommentModal(date) {
+    this.comments.currentDate = date;
+    this.comments.isEditing = true;
+
+    // Crear modal si no existe
+    let modal = document.getElementById("comment-modal");
+    if (!modal) {
+      modal = this.createCommentModal();
+      document.body.appendChild(modal);
+    }
+
+    // Cargar comentario existente
+    this.loadCommentForDate(date).then((comment) => {
+      const textarea = document.getElementById("comment-textarea");
+      const dateElement = document.getElementById("comment-date");
+
+      textarea.value = comment;
+      dateElement.textContent = this.formatDateSpanish(date);
+
+      modal.style.display = "flex";
+      textarea.focus();
+    });
+  }
+
+  hideCommentModal() {
+    const modal = document.getElementById("comment-modal");
+    if (modal) {
+      modal.style.display = "none";
+    }
+
+    this.comments.currentDate = null;
+    this.comments.isEditing = false;
+    this.clearAutoSaveTimeout();
+  }
+
+  createCommentModal() {
+    const modal = document.createElement("div");
+    modal.id = "comment-modal";
+    modal.className = "modal-overlay";
+    modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h3>💬 Comentario del día</h3>
+        <button id="cancel-comment-btn" class="modal-close">×</button>
+      </div>
+      <div class="modal-content">
+        <p><strong id="comment-date"></strong></p>
+        <textarea id="comment-textarea" placeholder="Escribe tu comentario sobre este día..."
+                  rows="4" maxlength="5000"></textarea>
+        <div class="comment-actions">
+          <div class="comment-status" id="comment-status"></div>
+          <div class="comment-buttons">
+            <button id="delete-comment-btn" class="btn btn-error">🗑️ Eliminar</button>
+            <button id="cancel-comment-btn" class="btn btn-secondary">Cancelar</button>
+            <button id="save-comment-btn" class="btn btn-primary">💾 Guardar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+    return modal;
+  }
+
+  async saveCurrentComment() {
+    if (!this.comments.currentDate) return;
+
+    const textarea = document.getElementById("comment-textarea");
+    const status = document.getElementById("comment-status");
+    const comment = textarea.value.trim();
+
+    status.textContent = "💾 Guardando...";
+    status.className = "comment-status saving";
+
+    const success = await this.saveComment(this.comments.currentDate, comment);
+
+    if (success) {
+      status.textContent = "✅ Guardado";
+      status.className = "comment-status saved";
+      setTimeout(() => {
+        this.hideCommentModal();
+      }, 1000);
+    } else {
+      status.textContent = "❌ Error al guardar";
+      status.className = "comment-status error";
+    }
+  }
+
+  async deleteCurrentComment() {
+    if (!this.comments.currentDate) return;
+
+    if (!confirm("¿Estás seguro de que quieres eliminar este comentario?")) {
+      return;
+    }
+
+    const status = document.getElementById("comment-status");
+    status.textContent = "🗑️ Eliminando...";
+    status.className = "comment-status deleting";
+
+    const success = await this.deleteComment(this.comments.currentDate);
+
+    if (success) {
+      status.textContent = "✅ Eliminado";
+      status.className = "comment-status deleted";
+      setTimeout(() => {
+        this.hideCommentModal();
+      }, 1000);
+    } else {
+      status.textContent = "❌ Error al eliminar";
+      status.className = "comment-status error";
+    }
+  }
+
+  scheduleAutoSave() {
+    this.clearAutoSaveTimeout();
+
+    this.comments.autoSaveTimeout = setTimeout(() => {
+      if (this.comments.currentDate && this.comments.isEditing) {
+        const textarea = document.getElementById("comment-textarea");
+        const status = document.getElementById("comment-status");
+
+        if (textarea && textarea.value.trim()) {
+          status.textContent = "💾 Guardando automáticamente...";
+          status.className = "comment-status auto-saving";
+
+          this.saveComment(
+            this.comments.currentDate,
+            textarea.value.trim()
+          ).then((success) => {
+            if (success) {
+              status.textContent = "✅ Guardado automáticamente";
+              status.className = "comment-status auto-saved";
+            }
+          });
+        }
+      }
+    }, 2000); // Auto-guardar después de 2 segundos de inactividad
+  }
+
+  clearAutoSaveTimeout() {
+    if (this.comments.autoSaveTimeout) {
+      clearTimeout(this.comments.autoSaveTimeout);
+      this.comments.autoSaveTimeout = null;
+    }
+  }
+
+  updateCommentIndicator(date, comment) {
+    // Buscar todos los iconos de comentario para esta fecha
+    const commentIcons = document.querySelectorAll(
+      `.comment-icon[data-date="${date}"]`
+    );
+
+    commentIcons.forEach((icon) => {
+      const indicator = icon.querySelector(".comment-indicator");
+      if (comment && comment.trim()) {
+        // Hay comentario - mostrar indicador
+        indicator.style.display = "inline";
+        icon.title = "Ver/editar comentario";
+        icon.classList.add("has-comment");
+      } else {
+        // No hay comentario - ocultar indicador
+        indicator.style.display = "none";
+        icon.title = "Agregar comentario";
+        icon.classList.remove("has-comment");
+      }
+    });
+  }
+
+  async loadCommentsForDisplayedDates(dates) {
+    // Cargar comentarios para todas las fechas de forma asíncrona
+    const commentPromises = dates.map((date) => this.loadCommentForDate(date));
+
+    try {
+      const comments = await Promise.all(commentPromises);
+
+      // Actualizar indicadores para cada fecha
+      dates.forEach((date, index) => {
+        const comment = comments[index] || "";
+        this.updateCommentIndicator(date, comment);
+      });
+
+      console.log(`Comentarios cargados para ${dates.length} fechas`);
+    } catch (error) {
+      console.error("Error cargando comentarios:", error);
+    }
+  }
+
+  updateCharacterCount() {
+    const textarea = document.getElementById("comment-textarea");
+    const counter = document.getElementById("comment-char-count");
+
+    if (!textarea || !counter) return;
+
+    const currentLength = textarea.value.length;
+    const maxLength = 5000;
+
+    counter.textContent = currentLength;
+
+    // Cambiar color según proximidad al límite
+    if (currentLength > 4500) {
+      counter.style.color = "var(--accent-error)";
+    } else if (currentLength > 4000) {
+      counter.style.color = "var(--accent-warning)";
+    } else {
+      counter.style.color = "var(--text-muted)";
+    }
+  }
+
+  showCommentStatus(message, type) {
+    const statusElement = document.getElementById("comment-status");
+    const statusIcon = statusElement.querySelector(".status-icon");
+    const statusText = statusElement.querySelector(".status-text");
+
+    if (!statusElement || !statusIcon || !statusText) return;
+
+    // Actualizar icono según tipo
+    switch (type) {
+      case "saving":
+        statusIcon.textContent = "⏳";
+        break;
+      case "saved":
+        statusIcon.textContent = "✅";
+        break;
+      case "error":
+        statusIcon.textContent = "❌";
+        break;
+      default:
+        statusIcon.textContent = "💾";
+    }
+
+    // Actualizar texto y mostrar
+    statusText.textContent = message;
+    statusElement.style.display = "flex";
+
+    // Auto-ocultar después de 3 segundos para 'saved'
+    if (type === "saved") {
+      setTimeout(() => {
+        statusElement.style.display = "none";
+      }, 3000);
+    }
   }
 
   // Utility functions

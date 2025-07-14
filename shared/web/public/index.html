@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,12 +14,14 @@
     <link rel="stylesheet" href="assets/css/components.css">
 
     <!-- Favicon -->
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📸</text></svg>">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📸</text></svg>">
 
     <!-- Preload de archivos críticos -->
     <link rel="preload" href="assets/js/common.js" as="script">
     <link rel="preload" href="assets/js/feed.js" as="script">
 </head>
+
 <body>
     <!-- Navigation Header -->
     <nav class="navbar">
@@ -161,6 +164,43 @@
         </div>
     </div>
 
+    <!-- Comment Modal (agregar después del slideshow-overlay) -->
+    <div class="modal-overlay" id="comment-modal" style="display: none;">
+        <div class="modal comment-modal">
+            <div class="modal-header">
+                <h3>💬 Comentario del día</h3>
+                <button onclick="photoFeed.hideCommentModal()" class="modal-close">×</button>
+            </div>
+            <div class="modal-content">
+                <div class="comment-date-info">
+                    <span id="comment-date" class="comment-date"></span>
+                </div>
+                <div class="comment-input-wrapper">
+                    <textarea id="comment-text" class="comment-textarea"
+                        placeholder="Escribe tus pensamientos sobre este día..." maxlength="5000"></textarea>
+                    <div class="comment-counter">
+                        <span id="comment-char-count">0</span>/5000
+                    </div>
+                </div>
+                <div class="comment-status" id="comment-status" style="display: none;">
+                    <span class="status-icon">💾</span>
+                    <span class="status-text">Guardado automáticamente</span>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button id="delete-comment-btn" class="btn btn-error" style="display: none;">
+                    🗑️ Eliminar
+                </button>
+                <button onclick="photoFeed.hideCommentModal()" class="btn btn-secondary">
+                    Cancelar
+                </button>
+                <button id="save-comment-btn" class="btn btn-primary">
+                    💾 Guardar
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="assets/js/common.js"></script>
     <script src="assets/js/components/lightbox.js"></script>
@@ -177,4 +217,5 @@
         }
     </script>
 </body>
+
 </html>
