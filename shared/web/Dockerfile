@@ -81,6 +81,16 @@ RUN echo '<VirtualHost *:80>' > /etc/apache2/sites-available/000-default.conf \
     && echo '    Alias /photos /data/fotos' >> /etc/apache2/sites-available/000-default.conf \
     && echo '</VirtualHost>' >> /etc/apache2/sites-available/000-default.conf
 
+# Configura PHP para mostrar y registrar errores
+RUN echo "display_errors=On" >> /usr/local/etc/php/conf.d/docker-php-errors.ini \
+ && echo "display_startup_errors=On" >> /usr/local/etc/php/conf.d/docker-php-errors.ini \
+ && echo "error_reporting=E_ALL" >> /usr/local/etc/php/conf.d/docker-php-errors.ini \
+ && echo "log_errors=On" >> /usr/local/etc/php/conf.d/docker-php-errors.ini \
+ && echo "error_log=/var/log/php_errors.log" >> /usr/local/etc/php/conf.d/docker-php-errors.ini
+
+# Crea el fichero de log (con permisos adecuados)
+RUN touch /var/log/php_errors.log && chmod 666 /var/log/php_errors.log
+
 # Copiar archivos de la aplicación (debes tener estos directorios)
 COPY public/ /var/www/html/
 COPY api/ /var/www/html/api/

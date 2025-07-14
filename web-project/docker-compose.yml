@@ -1,6 +1,4 @@
 # web-project/docker-compose.yml - CORREGIDO para Synology NAS
-version: '3.8'
-
 services:
   photo-web:
     build:
