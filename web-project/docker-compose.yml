@@ -1,4 +1,4 @@
-# web-project/docker-compose.yml - Solo Interfaz Web para Container Manager
+# web-project/docker-compose.yml - CORREGIDO para Synology NAS
 version: '3.8'
 
 services:
@@ -12,8 +12,6 @@ services:
     environment:
       TZ: ${TZ:-Europe/Madrid}
       PHOTOS_PATH: ${DATA_PATH:-/data/fotos}
-      APACHE_RUN_USER: "#33"
-      APACHE_RUN_GROUP: "#33"
       PHP_MEMORY_LIMIT: ${PHP_MEMORY_LIMIT:-128M}
       PHP_MAX_UPLOAD_SIZE: ${PHP_MAX_UPLOAD_SIZE:-20M}
       PHP_MAX_POST_SIZE: ${PHP_MAX_POST_SIZE:-20M}
@@ -21,17 +19,10 @@ services:
       - ${HOST_DATA_PATH}:${DATA_PATH:-/data/fotos}:${PHOTOS_MOUNT_MODE:-ro}
     restart: unless-stopped
 
-    # Optimización para NAS Synology
-    deploy:
-      resources:
-        limits:
-          memory: ${WEB_MEMORY_LIMIT:-512M}
-          cpus: '${WEB_CPU_LIMIT:-1.0}'
-        reservations:
-          memory: 256M
-          cpus: '0.3'
+    # ELIMINADO: deploy/resources (causa el error en Synology NAS)
+    # Los NAS Synology no soportan cgroup scheduler
 
-    # Logging optimizado para NAS
+    # Logging optimizado para NAS (esto sí funciona)
     logging:
       driver: "json-file"
       options:
@@ -41,10 +32,10 @@ services:
     # Red simple para Container Manager
     network_mode: bridge
 
-    # Health check para Container Manager UI
+    # Health check simplificado para Container Manager
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/", "||", "exit", "1"]
+      test: ["CMD-SHELL", "curl -f http://localhost/ || exit 1"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
       start_period: 60s
