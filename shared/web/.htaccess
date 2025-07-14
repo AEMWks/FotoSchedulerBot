@@ -1,72 +1,77 @@
-# web/.htaccess (Actualizado para nueva estructura)
+# shared/web/.htaccess - Configuración corregida para el enrutador de APIs
+
 RewriteEngine On
 
-# Headers CORS
+# Headers CORS para todas las requests
 Header always set Access-Control-Allow-Origin "*"
 Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS"
-Header always set Access-Control-Allow-Headers "Content-Type"
+Header always set Access-Control-Allow-Headers "Content-Type, Authorization"
+Header always set Access-Control-Max-Age "86400"
 
-# API Routes - Rutas amigables para las APIs (actualizadas para /routes/)
+# Manejar preflight OPTIONS requests
+RewriteCond %{REQUEST_METHOD} OPTIONS
+RewriteRule ^(.*)$ $1 [R=200,L]
 
-# API de fotos por fecha específica
-RewriteRule ^api/photos/([0-9]{4})/([0-9]{2})/([0-9]{2})/?$ /api/routes/photos.php?year=$1&month=$2&day=$3 [L,QSA]
+# ==========================================
+# API ROUTING - Todo va al enrutador principal
+# ==========================================
 
-# API de búsqueda y filtrado
-RewriteRule ^api/search/?$ /api/routes/search.php [L,QSA]
+# Redirigir todas las llamadas de API al enrutador principal
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^api/(.*)$ api/index.php [QSA,L]
 
-# API de estadísticas
-RewriteRule ^api/stats/?$ /api/routes/stats.php [L,QSA]
+# Si se accede directamente a /api sin path, también va al enrutador
+RewriteRule ^api/?$ api/index.php [QSA,L]
 
-# API de fechas disponibles
-RewriteRule ^api/dates/?$ /api/routes/dates.php [L,QSA]
+# ==========================================
+# STATIC FILES - Servir archivos estáticos directamente
+# ==========================================
 
-# API de exportación
-RewriteRule ^api/export/?$ /api/routes/export.php [L,QSA]
+# Assets (CSS, JS, imágenes)
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^assets/(.*)$ assets/$1 [L]
 
-# API de contenido aleatorio
-RewriteRule ^api/random/?$ /api/routes/random.php [L,QSA]
+# Fotos - servir directamente desde /photos
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^photos/(.*)$ photos/$1 [L]
 
-# API de calendario
-RewriteRule ^api/calendar/?$ /api/routes/calendar.php [L,QSA]
-RewriteRule ^api/calendar/([0-9]{4})/([0-9]{1,2})/?$ /api/routes/calendar.php?year=$1&month=$2 [L,QSA]
+# ==========================================
+# DEFAULT ROUTING - Páginas principales
+# ==========================================
 
-# API de feed principal
-RewriteRule ^api/feed/?$ /api/routes/feed.php [L,QSA]
+# Si no es API ni asset, y el archivo no existe, servir index.html
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !^/api/
+RewriteRule ^(.*)$ index.html [L]
 
-# Rutas adicionales para funcionalidades específicas
+# ==========================================
+# HEADERS DE CACHE
+# ==========================================
 
-# Exportar por tipo y fecha
-RewriteRule ^api/export/day/([0-9]{4}-[0-9]{2}-[0-9]{2})/?$ /api/routes/export.php?type=day&date=$1 [L,QSA]
-RewriteRule ^api/export/week/([0-9]{4}-[0-9]{2}-[0-9]{2})/?$ /api/routes/export.php?type=week&date=$1 [L,QSA]
-RewriteRule ^api/export/month/([0-9]{4}-[0-9]{2})/?$ /api/routes/export.php?type=month&month=$1 [L,QSA]
-
-# Estadísticas por período
-RewriteRule ^api/stats/([0-9]{4})/([0-9]{2})/?$ /api/routes/stats.php?start_date=$1-$2-01&end_date=$1-$2-31 [L,QSA]
-RewriteRule ^api/stats/([0-9]{4})/?$ /api/routes/stats.php?start_date=$1-01-01&end_date=$1-12-31 [L,QSA]
-
-# Búsqueda por año/mes/día
-RewriteRule ^api/search/([0-9]{4})/?$ /api/routes/search.php?year=$1 [L,QSA]
-RewriteRule ^api/search/([0-9]{4})/([0-9]{2})/?$ /api/routes/search.php?year=$1&month=$2 [L,QSA]
-RewriteRule ^api/search/([0-9]{4})/([0-9]{2})/([0-9]{2})/?$ /api/routes/search.php?year=$1&month=$2&day=$3 [L,QSA]
-
-# Random por tipo
-RewriteRule ^api/random/photos/?$ /api/routes/random.php?type=photo [L,QSA]
-RewriteRule ^api/random/videos/?$ /api/routes/random.php?type=video [L,QSA]
-
-# Headers de cache para archivos estáticos
+# Cache largo para assets estáticos
 <FilesMatch "\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$">
     Header set Cache-Control "max-age=31536000, public"
     Header set Expires "Thu, 31 Dec 2037 23:55:55 GMT"
 </FilesMatch>
 
-# Headers de cache para APIs (no cache)
+# No cache para APIs
 <FilesMatch "\.php$">
     Header set Cache-Control "no-cache, no-store, must-revalidate"
     Header set Pragma "no-cache"
     Header set Expires "0"
 </FilesMatch>
 
-# Comprimir archivos estáticos
+# Cache corto para páginas HTML
+<FilesMatch "\.html$">
+    Header set Cache-Control "max-age=300, public"
+</FilesMatch>
+
+# ==========================================
+# COMPRESIÓN
+# ==========================================
+
 <IfModule mod_deflate.c>
     AddOutputFilterByType DEFLATE text/plain
     AddOutputFilterByType DEFLATE text/html
@@ -77,23 +82,133 @@ RewriteRule ^api/random/videos/?$ /api/routes/random.php?type=video [L,QSA]
     AddOutputFilterByType DEFLATE application/rss+xml
     AddOutputFilterByType DEFLATE application/javascript
     AddOutputFilterByType DEFLATE application/x-javascript
+    AddOutputFilterByType DEFLATE application/json
 </IfModule>
 
-# Seguridad - Evitar acceso directo a archivos sensibles
+# ==========================================
+# SEGURIDAD
+# ==========================================
+
+# Prevenir acceso a archivos sensibles
 <Files "*.json">
-    Order allow,deny
-    Deny from all
+    <RequireAll>
+        Require all denied
+    </RequireAll>
 </Files>
 
 <Files "*.log">
-    Order allow,deny
-    Deny from all
+    <RequireAll>
+        Require all denied
+    </RequireAll>
 </Files>
 
 <Files "*.md">
-    Order allow,deny
-    Deny from all
+    <RequireAll>
+        Require all denied
+    </RequireAll>
 </Files>
 
+# Proteger archivos de configuración (pero permitir que PHP los incluya)
+<Files "config.php">
+    <RequireAll>
+        Require all denied
+    </RequireAll>
+</Files>
+
+# Proteger el directorio utils
+<Directory "api/utils">
+    <RequireAll>
+        Require all denied
+    </RequireAll>
+</Directory>
+
+# ==========================================
+# CONFIGURACIÓN DE DIRECTORIOS
+# ==========================================
+
+# Directorio de fotos - solo lectura
+<Directory "photos">
+    Options Indexes FollowSymLinks
+    AllowOverride None
+    Require all granted
+
+    # Prevenir ejecución de scripts
+    <FilesMatch "\.(php|phtml|php3|php4|php5|pl|py|jsp|asp|sh|cgi)$">
+        Require all denied
+    </FilesMatch>
+</Directory>
+
+# Directorio de assets
+<Directory "assets">
+    Options -Indexes
+    AllowOverride None
+    Require all granted
+</Directory>
+
+# Directorio de APIs
+<Directory "api">
+    Options -Indexes
+    AllowOverride None
+    Require all granted
+
+    # Solo permitir archivos PHP
+    <FilesMatch "\.php$">
+        Require all granted
+    </FilesMatch>
+</Directory>
+
+# ==========================================
+# ERROR HANDLING
+# ==========================================
+
 # Página de error personalizada para APIs
-ErrorDocument 404 /api/routes/error.php
+ErrorDocument 404 /api/index.php
+
+# ==========================================
+# CONFIGURACIÓN DE SEGURIDAD ADICIONAL
+# ==========================================
+
+# Prevenir información del servidor
+ServerTokens Prod
+ServerSignature Off
+
+# Headers de seguridad básica
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options nosniff
+    Header always set X-Frame-Options SAMEORIGIN
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+
+    # CSP básico para la aplicación
+    Header always set Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self'; font-src 'self' data:; connect-src 'self';"
+</IfModule>
+
+# ==========================================
+# LOGS Y DEBUGGING
+# ==========================================
+
+# Log de rewrite para debugging (desactivar en producción)
+# RewriteLog /var/log/apache2/rewrite.log
+# RewriteLogLevel 3
+
+# Log personalizado para APIs
+<IfModule mod_setenvif.c>
+    SetEnvIf Request_URI "^/api/" api_request
+    CustomLog logs/api_access.log combined env=api_request
+</IfModule>
+
+# ==========================================
+# CONFIGURACIÓN ESPECÍFICA PARA DEVELOPMENT
+# ==========================================
+
+# Solo en desarrollo - mostrar errores de PHP
+<If "%{ENV:DEBUG_MODE} == 'true'">
+    php_flag display_errors On
+    php_flag log_errors On
+</If>
+
+# En producción - ocultar errores
+<If "%{ENV:DEBUG_MODE} != 'true'">
+    php_flag display_errors Off
+    php_flag log_errors On
+</If>
