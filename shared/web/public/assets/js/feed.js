@@ -143,8 +143,6 @@ class PhotoFeed {
         this.scheduleAutoSave();
       }
     });
-
-
   }
 
   // Feed Management
@@ -884,7 +882,7 @@ class PhotoFeed {
   }
 
   updateCharacterCount() {
-    const textarea = document.getElementById("comment-text");
+    const textarea = document.getElementById("comment-textarea");
     const counter = document.getElementById("comment-char-count");
 
     if (!textarea || !counter) return;
