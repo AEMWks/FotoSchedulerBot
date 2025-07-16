@@ -21,12 +21,6 @@ class PhotoFeed {
       allMedia: [],
     };
 
-    // Lightbox
-    this.lightbox = {
-      currentIndex: 0,
-      currentMedia: [],
-    };
-
     this.init();
   }
 
@@ -92,7 +86,6 @@ class PhotoFeed {
     // Keyboard shortcuts
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
-        this.closeLightbox();
         this.stopSlideshow();
       } else if (e.key === "ArrowLeft") {
         this.previousMedia();
@@ -236,7 +229,9 @@ class PhotoFeed {
       html += `
                 <div class="diary-entry" data-date="${date}">
                     <div class="entry-header">
-                      <div class="entry-date">${this.formatDateSpanish(date)}</div>
+                      <div class="entry-date">${this.formatDateSpanish(
+                        date
+                      )}</div>
                       <div class="comment-box-container" data-date="${date}"></div>
                     </div>
                     <div class="media-grid">
@@ -253,8 +248,10 @@ class PhotoFeed {
     container.innerHTML = html;
 
     // Instanciar CommentBox para cada fecha
-    sortedDates.forEach(date => {
-      const commentContainer = container.querySelector(`.comment-box-container[data-date="${date}"]`);
+    sortedDates.forEach((date) => {
+      const commentContainer = container.querySelector(
+        `.comment-box-container[data-date="${date}"]`
+      );
       if (commentContainer && window.CommentBox) {
         new window.CommentBox(commentContainer, date);
       }
@@ -268,7 +265,7 @@ class PhotoFeed {
     const timestamp = this.extractTimestamp(filename);
 
     const mediaItem = `
-            <div class="media-item" onclick="photoFeed.openLightbox('${filePath}', '${date}', '${timestamp}', ${index})" data-date="${date}" data-time="${timestamp}">
+            <div class="media-item" onclick="openLightbox('${filePath}', '${date}', '${timestamp}', ${index})" data-date="${date}" data-time="${timestamp}">
                 ${
                   isVideo
                     ? `<video muted>
@@ -408,61 +405,6 @@ class PhotoFeed {
       this.isRefreshing = false;
       this.showRefreshIndicator(false);
     }
-  }
-
-  // Lightbox functionality
-  openLightbox(imageSrc, date, time, index) {
-    const lightbox = document.getElementById("lightbox");
-    const lightboxContent = document.getElementById("lightboxContent");
-    const lightboxVideo = document.getElementById("lightboxVideo");
-    const lightboxDate = document.getElementById("lightboxDate");
-    const lightboxTime = document.getElementById("lightboxTime");
-
-    // Prepare current media array for navigation
-    this.lightbox.currentMedia = this.slideshow.allMedia;
-    this.lightbox.currentIndex = index;
-
-    const isVideo = imageSrc.toLowerCase().includes(".mp4");
-
-    if (isVideo) {
-      lightboxContent.style.display = "none";
-      lightboxVideo.style.display = "block";
-      lightboxVideo.querySelector("source").src = imageSrc;
-      lightboxVideo.load();
-    } else {
-      lightboxVideo.style.display = "none";
-      lightboxContent.style.display = "block";
-      lightboxContent.src = imageSrc;
-    }
-
-    lightboxDate.textContent = this.formatDateSpanish(date);
-    lightboxTime.textContent = time;
-
-    lightbox.style.display = "flex";
-    document.addEventListener("keydown", this.handleLightboxKeydown);
-  }
-
-  closeLightbox() {
-    const lightbox = document.getElementById("lightbox");
-    lightbox.style.display = "none";
-    document.removeEventListener("keydown", this.handleLightboxKeydown);
-  }
-
-  previousMedia() {
-    if (this.lightbox.currentMedia.length === 0) return;
-
-    this.lightbox.currentIndex =
-      (this.lightbox.currentIndex - 1 + this.lightbox.currentMedia.length) %
-      this.lightbox.currentMedia.length;
-    this.updateLightboxContent();
-  }
-
-  nextMedia() {
-    if (this.lightbox.currentMedia.length === 0) return;
-
-    this.lightbox.currentIndex =
-      (this.lightbox.currentIndex + 1) % this.lightbox.currentMedia.length;
-    this.updateLightboxContent();
   }
 
   updateLightboxContent() {
@@ -728,10 +670,6 @@ function nextMedia() {
 
 function downloadMedia() {
   photoFeed.downloadMedia();
-}
-
-function closeLightbox() {
-  photoFeed.closeLightbox();
 }
 
 function pauseSlideshow() {

@@ -31,3 +31,6 @@ MANIFEST
 # Archivos de sistema
 .DS_Store
 Thumbs.db
+
+.env.local
+web-project/stop-local.bat
