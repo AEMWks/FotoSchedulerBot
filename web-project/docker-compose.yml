@@ -14,7 +14,7 @@ services:
       PHP_MAX_UPLOAD_SIZE: ${PHP_MAX_UPLOAD_SIZE:-20M}
       PHP_MAX_POST_SIZE: ${PHP_MAX_POST_SIZE:-20M}
     volumes:
-      - ${HOST_DATA_PATH}:${DATA_PATH:-/data/fotos}:${PHOTOS_MOUNT_MODE:-ro}
+      - ${HOST_DATA_PATH}:${DATA_PATH:-/data/fotos}
     restart: unless-stopped
 
     # ELIMINADO: deploy/resources (causa el error en Synology NAS)

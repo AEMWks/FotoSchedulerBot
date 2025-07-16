@@ -55,6 +55,9 @@ class APIRouter {
             'GET /calendar/{year}/{month}' => 'calendar.php',
             'GET /calendar' => 'calendar.php', // Mes actual por defecto
             'GET /feed' => 'feed.php',
+            'GET /comments/{date}' => 'comments.php',
+            'POST /comments/{date}' => 'comments.php',
+            'DELETE /comments/{date}' => 'comments.php',
 
             // Rutas de salud y información
             'GET /health' => 'health.php',

@@ -256,6 +256,17 @@ class PhotoFeed {
         new window.CommentBox(commentContainer, date);
       }
     });
+
+    // Añadir event listener a los iconos de comentario
+    container.querySelectorAll('.comment-icon').forEach(icon => {
+      icon.addEventListener('click', (e) => {
+        e.stopPropagation(); // Evita que se abra el lightbox
+        const date = icon.getAttribute('data-date');
+        if (window.commentsManager) {
+          window.commentsManager.openModal(date);
+        }
+      });
+    });
   }
 
   createMediaItem(filename, date, index) {
